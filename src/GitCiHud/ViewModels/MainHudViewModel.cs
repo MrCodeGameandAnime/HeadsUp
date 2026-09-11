@@ -12,17 +12,17 @@ public sealed class MainHudViewModel : INotifyPropertyChanged, IDisposable
     private readonly IGitRepositoryService _git;
     private readonly IGitHubActionsService _github;
     private readonly SettingsService _settings;
+    private readonly StartupService _startup;
     private readonly CancellationTokenSource _lifetime = new();
     private RepositoryState? _repository;
     private CiState? _ci;
     private UiPreferences _preferences;
-    private bool _expanded;
     private int _refreshing;
     private readonly object _stateGate = new();
     private long _shaGeneration;
 
-    public MainHudViewModel(IGitRepositoryService git, IGitHubActionsService github, SettingsService settings, UiPreferences preferences)
-        => (_git, _github, _settings, _preferences, _expanded) = (git, github, settings, preferences, preferences.Expanded);
+    public MainHudViewModel(IGitRepositoryService git, IGitHubActionsService github, SettingsService settings, UiPreferences preferences, StartupService? startup = null)
+        => (_git, _github, _settings, _preferences, _startup) = (git, github, settings, preferences, startup ?? new StartupService());
 
     public event PropertyChangedEventHandler? PropertyChanged;
     public string RepositoryName => _preferences.GitHubRepository ?? _repository?.Name ?? "Select a GitHub repository";
@@ -32,7 +32,11 @@ public sealed class MainHudViewModel : INotifyPropertyChanged, IDisposable
     public string FullLocalSha => _repository?.LocalHeadSha ?? "Unavailable";
     public string FullRemoteSha => _repository?.RemoteHeadSha ?? "Unavailable";
     public string FullCiSha => _ci?.HeadSha ?? _repository?.RemoteHeadSha ?? "Waiting for matching run";
-    public string LocalStatus => _preferences.RepositoryPath is null ? "Not linked" : _repository is null ? "? unavailable" : SyncText(_repository.Sync);
+    public string LocalStatus => string.IsNullOrWhiteSpace(_preferences.RepositoryPath)
+        ? "Not linked"
+        : _repository is { } state && string.Equals(state.Path, _preferences.RepositoryPath, StringComparison.OrdinalIgnoreCase)
+            ? SyncText(state.Sync)
+            : "Linked";
     public string CommitAge => _repository?.CommitTime is { } d ? FriendlyAge(DateTimeOffset.Now - d) : "";
     public string CiStatusText => _ci is null ? "waiting for run" : CiText(_ci.Status);
     public string Workflow => _ci?.WorkflowName ?? _ci?.Error ?? "Waiting for matching run";
@@ -48,13 +52,20 @@ public sealed class MainHudViewModel : INotifyPropertyChanged, IDisposable
     public IReadOnlyList<CiJob> Jobs => _ci?.Jobs ?? [];
     public IReadOnlyList<CiJob> FailedJobs => Jobs.Where(j => j.Status == CiStatus.Failure).ToArray();
     public string FailedJobsText => string.Join(Environment.NewLine, FailedJobs.Select(j => j.Name));
-    public bool Expanded { get => _expanded; set { if (_expanded != value) { _expanded = value; _preferences.Expanded = value; OnChanged(); _ = SaveAsync(); } } }
     public bool CanOpenRun => !string.IsNullOrWhiteSpace(_ci?.Url);
     public bool CanOpenFailedLogs => FailedJobs.Count > 0;
     public bool CanCopySha => !string.IsNullOrWhiteSpace(_ci?.HeadSha ?? _repository?.RemoteHeadSha);
     public bool CanCopyRunId => _ci?.RunId is not null;
     public bool CanCopyRunUrl => !string.IsNullOrWhiteSpace(_ci?.Url);
     public IBrush AccentBrush => Brush.Parse(_preferences.AccentColor);
+    public IBrush StatusBrush => Brush.Parse(_ci?.Status switch
+    {
+        CiStatus.Success => "#8BE28B",
+        CiStatus.Failure => "#FF8A8A",
+        CiStatus.Running or CiStatus.Queued => "#FFD166",
+        CiStatus.Cancelled or CiStatus.Skipped => "#B8C2CC",
+        _ => _preferences.AccentColor
+    });
     public IBrush SurfaceBrush
     {
         get
@@ -159,7 +170,7 @@ public sealed class MainHudViewModel : INotifyPropertyChanged, IDisposable
     public async Task SetRepositoryAsync(string path)
     {
         if (!await _git.IsRepositoryAsync(path, _lifetime.Token)) return;
-        lock (_stateGate) { _preferences.RepositoryPath = path; _preferences.Branch = null; _repository = null; _ci = null; _shaGeneration++; }
+        lock (_stateGate) { _preferences.RepositoryPath = path; if (string.IsNullOrWhiteSpace(_preferences.GitHubRepository)) _preferences.Branch = null; _repository = null; _ci = null; _shaGeneration++; }
         await SaveAsync(); await RefreshAsync(true);
     }
     public async Task SetGitHubRepositoryAsync(string input)
@@ -168,7 +179,6 @@ public sealed class MainHudViewModel : INotifyPropertyChanged, IDisposable
         lock (_stateGate)
         {
             _preferences.GitHubRepository = repository;
-            _preferences.RepositoryPath = null;
             _preferences.Branch = branch;
             _repository = null;
             _ci = null;
@@ -181,14 +191,33 @@ public sealed class MainHudViewModel : INotifyPropertyChanged, IDisposable
     public Task<IReadOnlyList<string>> GetBranchesAsync() => !string.IsNullOrWhiteSpace(_preferences.GitHubRepository)
         ? _github.GetBranchesAsync(_preferences.GitHubRepository, _lifetime.Token)
         : string.IsNullOrWhiteSpace(_preferences.RepositoryPath) ? Task.FromResult<IReadOnlyList<string>>([]) : _git.GetBranchesAsync(_preferences.RepositoryPath, _lifetime.Token);
+    public Task<IReadOnlyList<string>> GetBranchesForRepositoryAsync(string input)
+        => TryParseGitHubReference(input, out var repository, out _)
+            ? _github.GetBranchesAsync(repository, _lifetime.Token)
+            : Task.FromResult<IReadOnlyList<string>>([]);
     public async Task SetAccentAsync(string color) { _preferences.AccentColor = color; await SaveAsync(); NotifyAll(); }
     public async Task SetOpacityAsync(double opacity) { _preferences.Opacity = Math.Clamp(opacity, .15, 1); await SaveAsync(); NotifyAll(); }
+    public async Task SavePreferencesAsync() { _preferences.PollingSeconds = Math.Clamp(_preferences.PollingSeconds, 5, 60); await SaveAsync(); NotifyAll(); }
+    public async Task SetStartWithWindowsAsync(bool enabled)
+    {
+        _startup.SetEnabled(enabled);
+        _preferences.StartWithWindows = enabled;
+        await SaveAsync();
+        NotifyAll();
+    }
+    public async Task UnlinkLocalCloneAsync()
+    {
+        lock (_stateGate) { _preferences.RepositoryPath = null; _repository = null; _shaGeneration++; }
+        await SaveAsync();
+        if (!string.IsNullOrWhiteSpace(_preferences.GitHubRepository)) await RefreshAsync(true);
+        else NotifyAll();
+    }
     public void OpenRun() { if (CanOpenRun) Process.Start(new ProcessStartInfo(_ci!.Url!) { UseShellExecute = true }); }
     public void OpenFailedJob(CiJob job) { if (!string.IsNullOrWhiteSpace(job.Url)) Process.Start(new ProcessStartInfo(job.Url) { UseShellExecute = true }); }
     public void OpenFailedLogs() { if (FailedJobs.Count == 1) OpenFailedJob(FailedJobs[0]); else OpenRun(); }
     private async Task RunLocalSchedulerAsync(CancellationToken ct)
     {
-        var interval = string.IsNullOrWhiteSpace(_preferences.RepositoryPath) ? TimeSpan.FromSeconds(8) : TimeSpan.FromSeconds(2);
+        var interval = string.IsNullOrWhiteSpace(_preferences.RepositoryPath) ? TimeSpan.FromSeconds(_preferences.PollingSeconds) : TimeSpan.FromSeconds(2);
         using var timer = new PeriodicTimer(interval);
         while (await timer.WaitForNextTickAsync(ct)) await RefreshAsync(false);
     }
@@ -196,12 +225,13 @@ public sealed class MainHudViewModel : INotifyPropertyChanged, IDisposable
     {
         while (!ct.IsCancellationRequested)
         {
-            await Task.Delay(TimeSpan.FromSeconds(_ci?.Status == CiStatus.Unavailable ? 60 : 8), ct);
+            var seconds = _ci?.Status == CiStatus.Unavailable ? 60 : _preferences.PollingSeconds;
+            await Task.Delay(TimeSpan.FromSeconds(seconds), ct);
             if (_ci is null || !_ci.IsTerminal) await RefreshCiAsync();
         }
     }
     private Task SaveAsync() => _settings.SaveAsync(_preferences);
-    private void NotifyAll() { foreach (var name in new[] { nameof(RepositoryName), nameof(Branch), nameof(RemoteSha), nameof(CiSha), nameof(FullLocalSha), nameof(FullRemoteSha), nameof(FullCiSha), nameof(LocalStatus), nameof(CommitAge), nameof(CiStatusText), nameof(Workflow), nameof(RunNumberText), nameof(RunIdText), nameof(RunUrl), nameof(Runtime), nameof(StartedText), nameof(CompletedText), nameof(ConclusionText), nameof(RunIdentity), nameof(DetailCi), nameof(Jobs), nameof(FailedJobs), nameof(FailedJobsText), nameof(CanOpenRun), nameof(CanOpenFailedLogs), nameof(CanCopySha), nameof(CanCopyRunId), nameof(CanCopyRunUrl), nameof(EvidenceText), nameof(AccentBrush), nameof(SurfaceOpacity), nameof(SurfaceBrush) }) OnChanged(name); }
+    private void NotifyAll() { foreach (var name in new[] { nameof(RepositoryName), nameof(Branch), nameof(RemoteSha), nameof(CiSha), nameof(FullLocalSha), nameof(FullRemoteSha), nameof(FullCiSha), nameof(LocalStatus), nameof(CommitAge), nameof(CiStatusText), nameof(StatusBrush), nameof(Workflow), nameof(RunNumberText), nameof(RunIdText), nameof(RunUrl), nameof(Runtime), nameof(StartedText), nameof(CompletedText), nameof(ConclusionText), nameof(RunIdentity), nameof(DetailCi), nameof(Jobs), nameof(FailedJobs), nameof(FailedJobsText), nameof(CanOpenRun), nameof(CanOpenFailedLogs), nameof(CanCopySha), nameof(CanCopyRunId), nameof(CanCopyRunUrl), nameof(EvidenceText), nameof(AccentBrush), nameof(SurfaceOpacity), nameof(SurfaceBrush) }) OnChanged(name); }
     private void OnChanged([CallerMemberName] string? name = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
     private static string Short(string? sha) => string.IsNullOrEmpty(sha) ? "—" : sha[..Math.Min(12, sha.Length)];
     private static bool TryParseGitHubReference(string input, out string repository, out string? branch)

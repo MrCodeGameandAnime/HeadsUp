@@ -25,7 +25,10 @@ public sealed class UiPreferences
     public double Left { get; set; } = 24;
     public double Top { get; set; } = 24;
     public double Width { get; set; } = 505;
+    public double Height { get; set; } = 650;
     public double Opacity { get; set; } = .78;
     public string AccentColor { get; set; } = "#2D6A8E";
-    public bool Expanded { get; set; }
+    public int PollingSeconds { get; set; } = 8;
+    public bool StartWithWindows { get; set; }
+    public bool AlwaysOnTop { get; set; }
 }
