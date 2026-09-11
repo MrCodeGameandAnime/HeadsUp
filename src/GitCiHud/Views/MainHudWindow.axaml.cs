@@ -47,7 +47,19 @@ public partial class MainHudWindow : Window
     private void OnCloseClick(object? sender, RoutedEventArgs e) => Close();
     private async void OnRefreshClick(object? sender, RoutedEventArgs e) => await Vm.RefreshAsync();
     private void OnOpenRunClick(object? sender, RoutedEventArgs e) => Vm.OpenRun();
-    private void OnFailedLogsClick(object? sender, RoutedEventArgs e) => Vm.OpenFailedLogs();
+    private async void OnFailedLogsClick(object? sender, RoutedEventArgs e)
+    {
+        if (Vm.FailedJobs.Count > 1) await CopyAsync(Vm.FailedJobsText);
+        else Vm.OpenFailedLogs();
+    }
+    private async void OnCopyShaClick(object? sender, RoutedEventArgs e) => await CopyAsync(Vm.FullCiSha);
+    private async void OnCopyRunIdClick(object? sender, RoutedEventArgs e) => await CopyAsync(Vm.RunIdText);
+    private async void OnCopyRunUrlClick(object? sender, RoutedEventArgs e) => await CopyAsync(Vm.RunUrl);
+    private async void OnCopyEvidenceClick(object? sender, RoutedEventArgs e) => await CopyAsync(Vm.EvidenceText);
+    private async Task CopyAsync(string text)
+    {
+        if (TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard) await clipboard.SetTextAsync(text);
+    }
 
     private async Task ShowMenuAsync()
     {

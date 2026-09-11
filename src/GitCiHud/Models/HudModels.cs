@@ -6,7 +6,8 @@ public enum CiStatus { Unavailable, Waiting, Queued, Running, Success, Failure, 
 public sealed record RepositoryState(string Name, string Path, string Branch, string? LocalHeadSha,
     string? RemoteHeadSha, bool Dirty, SyncState Sync, DateTimeOffset? CommitTime, string? Error);
 
-public sealed record CiJob(string Name, CiStatus Status, string? Conclusion, string? Url);
+public sealed record CiJob(string Name, CiStatus Status, string? Conclusion, string? Url,
+    long? Id = null, DateTimeOffset? StartedAt = null, DateTimeOffset? CompletedAt = null);
 public sealed record CiState(string? HeadSha, string? WorkflowName, int? RunNumber, long? RunId,
     string? Url, CiStatus Status, DateTimeOffset? StartedAt, DateTimeOffset? CompletedAt,
     IReadOnlyList<CiJob> Jobs, string? Error)

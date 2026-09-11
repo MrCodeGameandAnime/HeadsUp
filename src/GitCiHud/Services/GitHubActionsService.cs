@@ -29,7 +29,7 @@ public sealed class GitHubActionsService : IGitHubActionsService
 
     public async Task<CiState> FindForShaAsync(string repository, string sha, CancellationToken ct)
     {
-        var list = await ProcessRunner.RunAsync("gh", $"run list --repo {repository} --commit {sha} --limit 20 --json databaseId,headSha,status,conclusion,name,number,url,startedAt,updatedAt", null, ct);
+        var list = await ProcessRunner.RunAsync("gh", $"run list --repo {repository} --commit {sha} --limit 20 --json databaseId,headSha,status,conclusion,name,workflowName,number,url,startedAt,updatedAt", null, ct);
         if (list.ExitCode != 0) return CiState.Unavailable(string.IsNullOrWhiteSpace(list.Error) ? "GitHub CLI unavailable" : CleanError(list.Error));
         try
         {
@@ -37,10 +37,11 @@ public sealed class GitHubActionsService : IGitHubActionsService
             var run = doc.RootElement.EnumerateArray().FirstOrDefault(x => x.TryGetProperty("headSha", out var h) && string.Equals(h.GetString(), sha, StringComparison.OrdinalIgnoreCase));
             if (run.ValueKind == JsonValueKind.Undefined) return CiState.Waiting(sha);
             var id = run.GetProperty("databaseId").GetInt64();
-            var view = await ProcessRunner.RunAsync("gh", $"run view {id} --repo {repository} --json databaseId,headSha,status,conclusion,name,number,url,startedAt,updatedAt,jobs", null, ct);
-            if (view.ExitCode != 0) return ToState(run, sha, []);
-            using var details = JsonDocument.Parse(view.Output);
-            return ToState(details.RootElement, sha, ReadJobs(details.RootElement));
+            var view = await ProcessRunner.RunAsync("gh", $"run view {id} --repo {repository} --json databaseId,headSha,status,conclusion,name,workflowName,number,url,startedAt,updatedAt", null, ct);
+            var metadata = view.ExitCode == 0 ? view.Output : run.GetRawText();
+            using var details = JsonDocument.Parse(metadata);
+            var jobs = await GetJobsAsync(repository, id, ct);
+            return ToState(details.RootElement, sha, jobs);
         }
         catch (JsonException) { return CiState.Unavailable("Unexpected GitHub CLI response"); }
     }
@@ -50,13 +51,24 @@ public sealed class GitHubActionsService : IGitHubActionsService
         var stateSha = GetString(run, "headSha");
         if (!string.Equals(stateSha, sha, StringComparison.OrdinalIgnoreCase)) return CiState.Waiting(sha);
         var status = ToStatus(GetString(run, "status"), GetString(run, "conclusion"));
-        return new(stateSha, GetString(run, "name"), GetInt(run, "number"), GetLong(run, "databaseId"), GetString(run, "url"), status,
+        return new(stateSha, GetString(run, "workflowName") ?? GetString(run, "name"), GetInt(run, "number"), GetLong(run, "databaseId"), GetString(run, "url"), status,
             GetDate(run, "startedAt"), GetDate(run, "updatedAt"), jobs, null);
     }
-    private static IReadOnlyList<CiJob> ReadJobs(JsonElement root)
+    private static async Task<IReadOnlyList<CiJob>> GetJobsAsync(string repository, long runId, CancellationToken ct)
     {
-        if (!root.TryGetProperty("jobs", out var jobs) || jobs.ValueKind != JsonValueKind.Array) return [];
-        return jobs.EnumerateArray().Select(j => new CiJob(GetString(j, "name") ?? "Unnamed job", ToStatus(GetString(j, "status"), GetString(j, "conclusion")), GetString(j, "conclusion"), GetString(j, "url"))).ToArray();
+        var result = await ProcessRunner.RunAsync("gh", $"api repos/{repository}/actions/runs/{runId}/jobs --paginate --jq \".jobs[] | {{id,name,status,conclusion,html_url,started_at,completed_at}}\"", null, ct);
+        if (result.ExitCode != 0 || string.IsNullOrWhiteSpace(result.Output)) return [];
+        try
+        {
+            var json = "[" + string.Join(',', result.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries)) + "]";
+            using var document = JsonDocument.Parse(json);
+            return document.RootElement.EnumerateArray().Select(j => new CiJob(
+                GetString(j, "name") ?? "Unnamed job",
+                ToStatus(GetString(j, "status"), GetString(j, "conclusion")),
+                GetString(j, "conclusion"), GetString(j, "html_url"), GetLong(j, "id"),
+                GetDate(j, "started_at"), GetDate(j, "completed_at"))).ToArray();
+        }
+        catch (JsonException) { return []; }
     }
     private static CiStatus ToStatus(string? status, string? conclusion) => conclusion?.ToLowerInvariant() switch
     {

@@ -1,19 +1,59 @@
-<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:models="clr-namespace:GitCiHud.Models" xmlns:vm="clr-namespace:GitCiHud.ViewModels" x:Class="GitCiHud.Views.MainHudWindow" x:DataType="vm:MainHudViewModel" Width="505" Height="255" MinWidth="365" MinHeight="190" SystemDecorations="None" TransparencyLevelHint="AcrylicBlur,Transparent" Background="Transparent" ShowInTaskbar="True">
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:models="clr-namespace:GitCiHud.Models" xmlns:vm="clr-namespace:GitCiHud.ViewModels" x:Class="GitCiHud.Views.MainHudWindow" x:DataType="vm:MainHudViewModel" Width="470" Height="250" MinWidth="390" MinHeight="210" SystemDecorations="None" TransparencyLevelHint="AcrylicBlur,Transparent" Background="Transparent" ShowInTaskbar="True">
   <Window.Styles>
     <Style Selector="TextBlock.label"><Setter Property="FontSize" Value="10"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Opacity" Value=".65"/></Style>
-    <Style Selector="TextBlock.sha"><Setter Property="FontSize" Value="17"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="FontFamily" Value="Cascadia Mono,Consolas,monospace"/></Style>
-    <Style Selector="Button.hud"><Setter Property="FontSize" Value="11"/><Setter Property="Padding" Value="9,4"/><Setter Property="Background" Value="#26000000"/><Setter Property="BorderBrush" Value="#38FFFFFF"/><Setter Property="CornerRadius" Value="5"/></Style>
+    <Style Selector="TextBlock.sha"><Setter Property="FontSize" Value="16"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="FontFamily" Value="Cascadia Mono,Consolas,monospace"/></Style>
+    <Style Selector="TextBlock.id"><Setter Property="FontFamily" Value="Cascadia Mono,Consolas,monospace"/><Setter Property="FontSize" Value="12"/></Style>
+    <Style Selector="Button.hud"><Setter Property="FontSize" Value="11"/><Setter Property="Padding" Value="8,4"/><Setter Property="Background" Value="#26000000"/><Setter Property="BorderBrush" Value="#38FFFFFF"/><Setter Property="CornerRadius" Value="5"/></Style>
+    <Style Selector="Button.copy"><Setter Property="FontSize" Value="11"/><Setter Property="Padding" Value="5,2"/><Setter Property="Background" Value="Transparent"/><Setter Property="BorderBrush" Value="#38FFFFFF"/><Setter Property="CornerRadius" Value="4"/></Style>
     <Style Selector="Button.close"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0"/><Setter Property="FontSize" Value="15"/><Setter Property="Padding" Value="5,1"/></Style>
   </Window.Styles>
   <Border Margin="1" Background="{Binding SurfaceBrush}" BorderBrush="#48FFFFFF" BorderThickness="1" CornerRadius="11" Padding="14,10">
     <Grid RowDefinitions="Auto,*,Auto,Auto" PointerPressed="OnHudPointerPressed">
-      <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" Background="Transparent" Cursor="SizeAll" PointerPressed="OnHeaderPointerPressed"><TextBlock Text="{Binding RepositoryName}" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center"/><TextBlock Grid.Column="1" Text="{Binding Branch}" Opacity=".8" FontSize="12" VerticalAlignment="Center" Margin="8,0" MaxWidth="150" TextTrimming="CharacterEllipsis"/><Button Grid.Column="2" Classes="close" Content="×" Click="OnCloseClick"/></Grid>
-      <Grid Grid.Row="1" Margin="0,10" ColumnDefinitions="*,*">
-        <StackPanel Margin="0,0,10,0"><TextBlock Classes="label" Text="LOCAL"/><TextBlock Classes="sha" Text="{Binding LocalSha}" Margin="0,4"/><TextBlock Text="{Binding LocalStatus}"/><TextBlock Text="{Binding CommitAge}" Opacity=".75" Margin="0,7,0,0"/></StackPanel>
-        <StackPanel Grid.Column="1" Margin="12,0,0,0"><TextBlock Classes="label" Text="GITHUB ACTIONS"/><TextBlock Classes="sha" Text="{Binding CiSha}" Margin="0,4"/><TextBlock Text="{Binding CiStatusText}"/><TextBlock Text="{Binding Workflow}" Opacity=".9" Margin="0,4,0,0" TextTrimming="CharacterEllipsis"/><TextBlock Text="{Binding Runtime}" Opacity=".75" Margin="0,3,0,0"/></StackPanel>
+      <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" Background="Transparent" Cursor="SizeAll" PointerPressed="OnHeaderPointerPressed">
+        <TextBlock Text="{Binding RepositoryName}" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+        <TextBlock Grid.Column="1" Text="{Binding Branch}" Opacity=".8" FontSize="12" VerticalAlignment="Center" Margin="8,0" MaxWidth="145" TextTrimming="CharacterEllipsis"/>
+        <Button Grid.Column="2" Classes="close" Content="×" Click="OnCloseClick" ToolTip.Tip="Close"/>
       </Grid>
-      <ItemsControl Grid.Row="2" ItemsSource="{Binding Jobs}" IsVisible="{Binding Expanded}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel><ItemsControl.ItemTemplate><DataTemplate x:DataType="models:CiJob"><TextBlock Margin="0,0,14,4"><Run Text="{Binding Name}"/><Run Text="  "/><Run Text="{Binding Status, Converter={x:Static vm:JobStatusConverter.Instance}}"/></TextBlock></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
-      <Grid Grid.Row="3" RowDefinitions="Auto,Auto" Margin="0,4,0,0"><StackPanel Orientation="Horizontal"><Button Classes="hud" Content="Open Run" IsEnabled="{Binding CanOpenRun}" Click="OnOpenRunClick"/><Button Classes="hud" Content="Failed Logs" IsEnabled="{Binding CanOpenFailedLogs}" Click="OnFailedLogsClick" Margin="7,0,0,0"/><Button Classes="hud" Content="Refresh" Click="OnRefreshClick" Margin="7,0,0,0"/></StackPanel><Grid Grid.Row="1" Margin="0,10,0,0" IsVisible="{Binding Expanded}" RowDefinitions="Auto,Auto,Auto,Auto"><TextBlock><Run Text="Repository    "/><Run Text="{Binding RepositoryName}"/></TextBlock><TextBlock Grid.Row="1"><Run Text="Branch          "/><Run Text="{Binding Branch}"/></TextBlock><TextBlock Grid.Row="2" FontFamily="Cascadia Mono,Consolas,monospace"><Run Text="Local           "/><Run Text="{Binding FullLocalSha}"/></TextBlock><TextBlock Grid.Row="3" FontFamily="Cascadia Mono,Consolas,monospace" TextTrimming="CharacterEllipsis"><Run Text="Remote        "/><Run Text="{Binding FullRemoteSha}"/><Run Text="    CI  "/><Run Text="{Binding FullCiSha}"/></TextBlock></Grid></Grid>
+      <StackPanel Grid.Row="1" Margin="0,9,0,7">
+        <TextBlock Classes="label" Text="GITHUB ACTIONS"/>
+        <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,4,0,8">
+          <TextBlock Text="{Binding CiStatusText}" FontSize="14" FontWeight="SemiBold" Foreground="{Binding AccentBrush}"/>
+          <TextBlock Grid.Column="1" Text="{Binding RunIdentity}" FontSize="14" FontWeight="SemiBold" Margin="10,0" TextTrimming="CharacterEllipsis"/>
+        </Grid>
+        <Grid RowDefinitions="Auto,Auto,Auto,Auto" ColumnDefinitions="Auto,*,Auto">
+          <TextBlock Classes="label" Text="SHA" VerticalAlignment="Center"/>
+          <TextBlock Grid.Column="1" Classes="sha" Text="{Binding CiSha}" VerticalAlignment="Center" Margin="12,0"/>
+          <Button Grid.Column="2" Classes="copy" Content="⧉" IsEnabled="{Binding CanCopySha}" Click="OnCopyShaClick" ToolTip.Tip="Copy full SHA"/>
+          <TextBlock Grid.Row="1" Classes="label" Text="RUN ID" VerticalAlignment="Center"/>
+          <TextBlock Grid.Row="1" Grid.Column="1" Classes="id" Text="{Binding RunIdText}" VerticalAlignment="Center" Margin="12,0"/>
+          <Button Grid.Row="1" Grid.Column="2" Classes="copy" Content="⧉" IsEnabled="{Binding CanCopyRunId}" Click="OnCopyRunIdClick" ToolTip.Tip="Copy Run ID"/>
+          <TextBlock Grid.Row="2" Classes="label" Text="DURATION" VerticalAlignment="Center"/>
+          <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Runtime}" VerticalAlignment="Center" Margin="12,0"/>
+          <TextBlock Grid.Row="3" Classes="label" Text="RUN URL" VerticalAlignment="Center"/>
+          <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding RunUrl}" VerticalAlignment="Center" Margin="12,0" TextTrimming="CharacterEllipsis"/>
+          <Button Grid.Row="3" Grid.Column="2" Classes="copy" Content="⧉" IsEnabled="{Binding CanCopyRunUrl}" Click="OnCopyRunUrlClick" ToolTip.Tip="Copy Run URL"/>
+        </Grid>
+      </StackPanel>
+      <ItemsControl Grid.Row="2" ItemsSource="{Binding Jobs}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel><ItemsControl.ItemTemplate><DataTemplate x:DataType="models:CiJob"><Border Background="#18000000" CornerRadius="4" Padding="6,3" Margin="0,0,6,4"><StackPanel Orientation="Horizontal"><TextBlock Text="{Binding Status, Converter={x:Static vm:JobStatusConverter.Instance}}" FontSize="12" Margin="0,0,4,0"/><TextBlock Text="{Binding Name}" FontSize="11" TextTrimming="CharacterEllipsis" MaxWidth="190"/></StackPanel></Border></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+      <Grid Grid.Row="3" RowDefinitions="Auto,Auto" Margin="0,4,0,0">
+        <StackPanel Orientation="Horizontal"><Button Classes="hud" Content="Open Run" IsEnabled="{Binding CanOpenRun}" Click="OnOpenRunClick"/><Button Classes="hud" Content="Failed Logs" IsEnabled="{Binding CanOpenFailedLogs}" Click="OnFailedLogsClick" Margin="6,0,0,0"/><Button Classes="hud" Content="Copy Evidence" Click="OnCopyEvidenceClick" Margin="6,0,0,0"/><Button Classes="hud" Content="Refresh" Click="OnRefreshClick" Margin="6,0,0,0"/></StackPanel>
+        <Border Grid.Row="1" IsVisible="{Binding Expanded}" BorderBrush="#30FFFFFF" BorderThickness="0,1,0,0" Margin="0,9,0,0" Padding="0,8,0,0">
+          <Grid ColumnDefinitions="88,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto">
+            <TextBlock Classes="label" Text="REPOSITORY"/><TextBlock Grid.Column="1" Text="{Binding RepositoryName}"/>
+            <TextBlock Grid.Row="1" Classes="label" Text="BRANCH"/><TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Branch}"/>
+            <TextBlock Grid.Row="2" Classes="label" Text="SHA"/><TextBlock Grid.Row="2" Grid.Column="1" Classes="id" Text="{Binding FullCiSha}" TextWrapping="NoWrap"/>
+            <TextBlock Grid.Row="3" Classes="label" Text="WORKFLOW"/><TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding Workflow}"/>
+            <TextBlock Grid.Row="4" Classes="label" Text="RUN #"/><TextBlock Grid.Row="4" Grid.Column="1" Classes="id" Text="{Binding RunNumberText}"/>
+            <TextBlock Grid.Row="5" Classes="label" Text="RUN ID"/><TextBlock Grid.Row="5" Grid.Column="1" Classes="id" Text="{Binding RunIdText}"/>
+            <TextBlock Grid.Row="6" Classes="label" Text="STATUS"/><TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding CiStatusText}"/>
+            <TextBlock Grid.Row="7" Classes="label" Text="DURATION"/><TextBlock Grid.Row="7" Grid.Column="1" Text="{Binding Runtime}"/>
+            <TextBlock Grid.Row="8" Classes="label" Text="STARTED"/><TextBlock Grid.Row="8" Grid.Column="1" Classes="id" Text="{Binding StartedText}"/>
+            <TextBlock Grid.Row="9" Classes="label" Text="COMPLETED"/><TextBlock Grid.Row="9" Grid.Column="1" Classes="id" Text="{Binding CompletedText}"/>
+            <TextBlock Grid.Row="10" Classes="label" Text="RUN URL"/><TextBlock Grid.Row="10" Grid.Column="1" Text="{Binding RunUrl}" TextTrimming="CharacterEllipsis"/>
+            <TextBlock Grid.Row="11" Classes="label" Text="LOCAL CLONE"/><TextBlock Grid.Row="11" Grid.Column="1" Text="{Binding LocalStatus}"/>
+          </Grid>
+        </Border>
+      </Grid>
     </Grid>
   </Border>
 </Window>

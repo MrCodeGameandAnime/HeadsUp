@@ -23,24 +23,35 @@ public sealed class MainHudViewModel : INotifyPropertyChanged, IDisposable
         => (_git, _github, _settings, _preferences, _expanded) = (git, github, settings, preferences, preferences.Expanded);
 
     public event PropertyChangedEventHandler? PropertyChanged;
-    public string RepositoryName => _repository?.Name ?? "Select a GitHub repository";
+    public string RepositoryName => _preferences.GitHubRepository ?? _repository?.Name ?? "Select a GitHub repository";
     public string Branch => _repository?.Branch ?? _preferences.Branch ?? "No branch";
-    public string LocalSha => Short(_repository?.LocalHeadSha);
     public string RemoteSha => Short(_repository?.RemoteHeadSha);
-    public string CiSha => Short(_ci?.HeadSha);
+    public string CiSha => Short(_ci?.HeadSha ?? _repository?.RemoteHeadSha);
     public string FullLocalSha => _repository?.LocalHeadSha ?? "Unavailable";
     public string FullRemoteSha => _repository?.RemoteHeadSha ?? "Unavailable";
-    public string FullCiSha => _ci?.HeadSha ?? "Waiting for matching run";
-    public string LocalStatus => _repository is null ? "? unavailable" : SyncText(_repository.Sync);
+    public string FullCiSha => _ci?.HeadSha ?? _repository?.RemoteHeadSha ?? "Waiting for matching run";
+    public string LocalStatus => _preferences.RepositoryPath is null ? "Not linked" : _repository is null ? "? unavailable" : SyncText(_repository.Sync);
     public string CommitAge => _repository?.CommitTime is { } d ? FriendlyAge(DateTimeOffset.Now - d) : "";
     public string CiStatusText => _ci is null ? "waiting for run" : CiText(_ci.Status);
-    public string Workflow => _ci?.WorkflowName is { } name ? $"{name} #{_ci.RunNumber}" : _ci?.Error ?? "Waiting for matching run";
-    public string Runtime => _ci?.StartedAt is { } d ? FriendlyAge((_ci.CompletedAt ?? DateTimeOffset.Now) - d) : "";
+    public string Workflow => _ci?.WorkflowName ?? _ci?.Error ?? "Waiting for matching run";
+    public string RunNumberText => _ci?.RunNumber is { } number ? number.ToString() : "—";
+    public string RunIdText => _ci?.RunId is { } id ? id.ToString() : "—";
+    public string RunUrl => _ci?.Url ?? "—";
+    public string Runtime => _ci?.StartedAt is { } d ? FriendlyAge((_ci.CompletedAt ?? DateTimeOffset.Now) - d) : "—";
+    public string StartedText => _ci?.StartedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "—";
+    public string CompletedText => _ci?.CompletedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "—";
+    public string ConclusionText => _ci?.Status switch { CiStatus.Success => "success", CiStatus.Failure => "failure", CiStatus.Cancelled => "cancelled", CiStatus.Skipped => "skipped", _ => "—" };
+    public string RunIdentity => _ci?.WorkflowName is { } name && _ci.RunNumber is { } number ? $"{name} #{number}" : "Waiting for matching run";
     public string DetailCi => $"{CiStatusText} {Runtime}".Trim();
     public IReadOnlyList<CiJob> Jobs => _ci?.Jobs ?? [];
+    public IReadOnlyList<CiJob> FailedJobs => Jobs.Where(j => j.Status == CiStatus.Failure).ToArray();
+    public string FailedJobsText => string.Join(Environment.NewLine, FailedJobs.Select(j => j.Name));
     public bool Expanded { get => _expanded; set { if (_expanded != value) { _expanded = value; _preferences.Expanded = value; OnChanged(); _ = SaveAsync(); } } }
     public bool CanOpenRun => !string.IsNullOrWhiteSpace(_ci?.Url);
-    public bool CanOpenFailedLogs => _ci?.Status == CiStatus.Failure && !string.IsNullOrWhiteSpace(_ci.Url);
+    public bool CanOpenFailedLogs => FailedJobs.Count > 0;
+    public bool CanCopySha => !string.IsNullOrWhiteSpace(_ci?.HeadSha ?? _repository?.RemoteHeadSha);
+    public bool CanCopyRunId => _ci?.RunId is not null;
+    public bool CanCopyRunUrl => !string.IsNullOrWhiteSpace(_ci?.Url);
     public IBrush AccentBrush => Brush.Parse(_preferences.AccentColor);
     public IBrush SurfaceBrush
     {
@@ -52,6 +63,7 @@ public sealed class MainHudViewModel : INotifyPropertyChanged, IDisposable
     }
     public double SurfaceOpacity => _preferences.Opacity;
     public UiPreferences Preferences => _preferences;
+    public string EvidenceText => $"Repository: {RepositoryName}\nBranch: {Branch}\nSHA: {FullCiSha}\nWorkflow: {Workflow}\nRun Number: {RunNumberText}\nRun ID: {RunIdText}\nConclusion: {ConclusionText}\nRun: {RunUrl}";
 
     public async Task InitializeAsync()
     {
@@ -121,8 +133,14 @@ public sealed class MainHudViewModel : INotifyPropertyChanged, IDisposable
     public async Task SetAccentAsync(string color) { _preferences.AccentColor = color; await SaveAsync(); NotifyAll(); }
     public async Task SetOpacityAsync(double opacity) { _preferences.Opacity = Math.Clamp(opacity, .15, 1); await SaveAsync(); NotifyAll(); }
     public void OpenRun() { if (CanOpenRun) Process.Start(new ProcessStartInfo(_ci!.Url!) { UseShellExecute = true }); }
-    public void OpenFailedLogs() => OpenRun();
-    private async Task RunLocalSchedulerAsync(CancellationToken ct) { using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2)); while (await timer.WaitForNextTickAsync(ct)) await RefreshAsync(false); }
+    public void OpenFailedJob(CiJob job) { if (!string.IsNullOrWhiteSpace(job.Url)) Process.Start(new ProcessStartInfo(job.Url) { UseShellExecute = true }); }
+    public void OpenFailedLogs() { if (FailedJobs.Count == 1) OpenFailedJob(FailedJobs[0]); else OpenRun(); }
+    private async Task RunLocalSchedulerAsync(CancellationToken ct)
+    {
+        var interval = string.IsNullOrWhiteSpace(_preferences.RepositoryPath) ? TimeSpan.FromSeconds(8) : TimeSpan.FromSeconds(2);
+        using var timer = new PeriodicTimer(interval);
+        while (await timer.WaitForNextTickAsync(ct)) await RefreshAsync(false);
+    }
     private async Task RunCiSchedulerAsync(CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
@@ -132,7 +150,7 @@ public sealed class MainHudViewModel : INotifyPropertyChanged, IDisposable
         }
     }
     private Task SaveAsync() => _settings.SaveAsync(_preferences);
-    private void NotifyAll() { foreach (var name in new[] { nameof(RepositoryName), nameof(Branch), nameof(LocalSha), nameof(RemoteSha), nameof(CiSha), nameof(FullLocalSha), nameof(FullRemoteSha), nameof(FullCiSha), nameof(LocalStatus), nameof(CommitAge), nameof(CiStatusText), nameof(Workflow), nameof(Runtime), nameof(DetailCi), nameof(Jobs), nameof(CanOpenRun), nameof(CanOpenFailedLogs), nameof(AccentBrush), nameof(SurfaceOpacity), nameof(SurfaceBrush) }) OnChanged(name); }
+    private void NotifyAll() { foreach (var name in new[] { nameof(RepositoryName), nameof(Branch), nameof(RemoteSha), nameof(CiSha), nameof(FullLocalSha), nameof(FullRemoteSha), nameof(FullCiSha), nameof(LocalStatus), nameof(CommitAge), nameof(CiStatusText), nameof(Workflow), nameof(RunNumberText), nameof(RunIdText), nameof(RunUrl), nameof(Runtime), nameof(StartedText), nameof(CompletedText), nameof(ConclusionText), nameof(RunIdentity), nameof(DetailCi), nameof(Jobs), nameof(FailedJobs), nameof(FailedJobsText), nameof(CanOpenRun), nameof(CanOpenFailedLogs), nameof(CanCopySha), nameof(CanCopyRunId), nameof(CanCopyRunUrl), nameof(EvidenceText), nameof(AccentBrush), nameof(SurfaceOpacity), nameof(SurfaceBrush) }) OnChanged(name); }
     private void OnChanged([CallerMemberName] string? name = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
     private static string Short(string? sha) => string.IsNullOrEmpty(sha) ? "—" : sha[..Math.Min(12, sha.Length)];
     private static bool TryParseGitHubReference(string input, out string repository, out string? branch)
