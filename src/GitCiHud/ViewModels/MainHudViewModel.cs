@@ -18,6 +18,7 @@ public sealed class MainHudViewModel : INotifyPropertyChanged, IDisposable
     private CiState? _ci;
     private UiPreferences _preferences;
     private int _refreshing;
+    private int _ciRefreshing;
     private readonly object _stateGate = new();
     private long _shaGeneration;
 
@@ -142,6 +143,13 @@ public sealed class MainHudViewModel : INotifyPropertyChanged, IDisposable
     }
     private async Task RefreshCiAsync()
     {
+        // The local and CI schedulers can both notice the same state. Never
+        // overlap gh lookups: besides wasting work, an older jobs request can
+        // otherwise keep the process busy and temporarily inflate its footprint.
+        if (Interlocked.Exchange(ref _ciRefreshing, 1) != 0) return;
+
+        try
+        {
         string? sha;
         string? slug;
         long expectedGeneration;
@@ -166,6 +174,11 @@ public sealed class MainHudViewModel : INotifyPropertyChanged, IDisposable
             _ci = candidate;
         }
         NotifyAll();
+        }
+        finally
+        {
+            Volatile.Write(ref _ciRefreshing, 0);
+        }
     }
     public async Task SetRepositoryAsync(string path)
     {
@@ -217,9 +230,20 @@ public sealed class MainHudViewModel : INotifyPropertyChanged, IDisposable
     public void OpenFailedLogs() { if (FailedJobs.Count == 1) OpenFailedJob(FailedJobs[0]); else OpenRun(); }
     private async Task RunLocalSchedulerAsync(CancellationToken ct)
     {
-        var interval = string.IsNullOrWhiteSpace(_preferences.RepositoryPath) ? TimeSpan.FromSeconds(_preferences.PollingSeconds) : TimeSpan.FromSeconds(2);
-        using var timer = new PeriodicTimer(interval);
-        while (await timer.WaitForNextTickAsync(ct)) await RefreshAsync(false);
+        while (!ct.IsCancellationRequested)
+        {
+            // Local filesystem state is cheap to sample frequently. A GitHub
+            // branch head is remote state, so back it off while terminal CI is
+            // displayed; the CI scheduler handles active-run updates separately.
+            var hasLocalClone = !string.IsNullOrWhiteSpace(_preferences.RepositoryPath);
+            var seconds = hasLocalClone
+                ? 2
+                : _ci?.IsTerminal == true
+                    ? Math.Max(_preferences.PollingSeconds, 60)
+                    : Math.Max(_preferences.PollingSeconds, 15);
+            await Task.Delay(TimeSpan.FromSeconds(seconds), ct);
+            await RefreshAsync(false);
+        }
     }
     private async Task RunCiSchedulerAsync(CancellationToken ct)
     {

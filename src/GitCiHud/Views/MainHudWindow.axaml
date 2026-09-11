@@ -10,7 +10,6 @@
         MinWidth="470"
         MinHeight="520"
         Background="#10151D"
-        TransparencyLevelHint="AcrylicBlur"
         ShowInTaskbar="True">
   <Window.Styles>
     <Style Selector="TextBlock.label">
