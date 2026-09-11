@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using GitCiHud.Services;
@@ -11,17 +12,25 @@ public partial class App : Application
 {
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
 
-    public override async void OnFrameworkInitializationCompleted()
+    public override void OnFrameworkInitializationCompleted()
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             var settings = new SettingsService();
-            var preferences = await settings.LoadAsync();
+            // Settings are a small local JSON file. Read them before the shell is shown,
+            // but never make the window wait on Git or GitHub I/O.
+            var preferences = settings.Load();
             var vm = new MainHudViewModel(new GitRepositoryService(), new GitHubActionsService(), settings, preferences);
             var window = new MainHudWindow { DataContext = vm };
             window.ApplyPreferences(preferences);
+            window.Opened += async (_, _) =>
+            {
+                window.WindowState = WindowState.Normal;
+                window.Activate();
+                await vm.InitializeAsync();
+            };
             desktop.MainWindow = window;
-            await vm.InitializeAsync();
+            window.Show();
         }
         base.OnFrameworkInitializationCompleted();
     }

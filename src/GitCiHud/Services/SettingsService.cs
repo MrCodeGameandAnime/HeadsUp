@@ -8,9 +8,9 @@ public sealed class SettingsService
     private readonly string _file = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "GitCiHud", "settings.json");
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
 
-    public async Task<UiPreferences> LoadAsync()
+    public UiPreferences Load()
     {
-        try { return JsonSerializer.Deserialize<UiPreferences>(await File.ReadAllTextAsync(_file), Json) ?? new UiPreferences(); }
+        try { return JsonSerializer.Deserialize<UiPreferences>(File.ReadAllText(_file), Json) ?? new UiPreferences(); }
         catch { return new UiPreferences(); }
     }
     public async Task SaveAsync(UiPreferences value)

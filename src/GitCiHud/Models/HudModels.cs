@@ -19,6 +19,7 @@ public sealed record CiState(string? HeadSha, string? WorkflowName, int? RunNumb
 public sealed class UiPreferences
 {
     public string? RepositoryPath { get; set; }
+    public string? GitHubRepository { get; set; }
     public string? Branch { get; set; }
     public double Left { get; set; } = 24;
     public double Top { get; set; } = 24;

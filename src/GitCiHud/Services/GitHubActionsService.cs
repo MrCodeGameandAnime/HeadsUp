@@ -6,10 +6,27 @@ namespace GitCiHud.Services;
 public interface IGitHubActionsService
 {
     Task<CiState> FindForShaAsync(string repository, string sha, CancellationToken ct);
+    Task<IReadOnlyList<string>> GetBranchesAsync(string repository, CancellationToken ct);
+    Task<(string? Sha, string? Error)> GetBranchShaAsync(string repository, string branch, CancellationToken ct);
 }
 
 public sealed class GitHubActionsService : IGitHubActionsService
 {
+    public async Task<IReadOnlyList<string>> GetBranchesAsync(string repository, CancellationToken ct)
+    {
+        var result = await ProcessRunner.RunAsync("gh", $"api repos/{repository}/branches --paginate --jq \".[].name\"", null, ct);
+        return result.ExitCode == 0 ? result.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries).Order().ToArray() : [];
+    }
+
+    public async Task<(string? Sha, string? Error)> GetBranchShaAsync(string repository, string branch, CancellationToken ct)
+    {
+        var encodedBranch = Uri.EscapeDataString(branch);
+        var result = await ProcessRunner.RunAsync("gh", $"api repos/{repository}/branches/{encodedBranch} --jq \".commit.sha\"", null, ct);
+        return result.ExitCode == 0 && !string.IsNullOrWhiteSpace(result.Output)
+            ? (result.Output, null)
+            : (null, string.IsNullOrWhiteSpace(result.Error) ? "GitHub repository or branch unavailable" : CleanError(result.Error));
+    }
+
     public async Task<CiState> FindForShaAsync(string repository, string sha, CancellationToken ct)
     {
         var list = await ProcessRunner.RunAsync("gh", $"run list --repo {repository} --commit {sha} --limit 20 --json databaseId,headSha,status,conclusion,name,number,url,startedAt,updatedAt", null, ct);

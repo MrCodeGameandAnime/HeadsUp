@@ -2,7 +2,6 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
-using Avalonia.Platform.Storage;
 using GitCiHud.Models;
 using GitCiHud.Services;
 using GitCiHud.ViewModels;
@@ -90,8 +89,24 @@ public partial class MainHudWindow : Window
 
     private async Task PickRepositoryAsync()
     {
-        var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = "Select a Git repository", AllowMultiple = false });
-        if (folders.Count > 0 && folders[0].TryGetLocalPath() is { } path) await Vm.SetRepositoryAsync(path);
+        var input = new TextBox
+        {
+            Watermark = "https://github.com/owner/repository or …/tree/branch",
+            Text = Vm.Preferences.GitHubRepository is { } repo ? $"https://github.com/{repo}" : "",
+            MinWidth = 390
+        };
+        var hint = new TextBlock { Text = "Paste a GitHub repository URL. Include /tree/branch to select a branch now; otherwise choose Branch from the HUD menu.", TextWrapping = Avalonia.Media.TextWrapping.Wrap, Opacity = .75 };
+        var save = new Button { Content = "Use repository", IsDefault = true, MinWidth = 110 };
+        var cancel = new Button { Content = "Cancel", IsCancel = true, MinWidth = 75 };
+        var buttons = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right, Spacing = 8 };
+        buttons.Children.Add(cancel); buttons.Children.Add(save);
+        var panel = new StackPanel { Margin = new Thickness(18), Spacing = 10 };
+        panel.Children.Add(hint); panel.Children.Add(input); panel.Children.Add(buttons);
+        var dialog = new Window { Title = "GitHub repository", Width = 510, Height = 175, CanResize = false, WindowStartupLocation = WindowStartupLocation.CenterOwner, Content = panel };
+        save.Click += (_, _) => dialog.Close(input.Text);
+        cancel.Click += (_, _) => dialog.Close(null);
+        var value = await dialog.ShowDialog<string?>(this);
+        if (!string.IsNullOrWhiteSpace(value)) await Vm.SetGitHubRepositoryAsync(value);
     }
 
     private void SavePosition()
