@@ -1,0 +1,111 @@
+name: HeadsUp CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_VERSION: '10.0.x'
+
+jobs:
+  hygiene:
+    name: Changes and repository hygiene
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Check whitespace errors
+        shell: pwsh
+        run: git diff --check
+
+      - name: Reject tracked build and package artifacts
+        shell: pwsh
+        run: |
+          $tracked = @(git ls-files | Where-Object {
+            $_ -match '(^|/)(bin|obj|\.nuget|\.vs)/' -or
+            $_ -match '\.(dll|exe|pdb|nupkg|snupkg)$'
+          })
+          if ($tracked.Count -gt 0) {
+            Write-Host 'Tracked generated artifacts were found:'
+            $tracked | ForEach-Object { Write-Host "  $_" }
+            throw 'Remove generated build/package artifacts from the repository.'
+          }
+
+      - name: Confirm clean checkout
+        shell: pwsh
+        run: |
+          $status = @(git status --short --untracked-files=all)
+          if ($status.Count -gt 0) {
+            $status | ForEach-Object { Write-Host $_ }
+            throw 'The clean checkout contains unexpected changes.'
+          }
+
+  release-build:
+    name: Release build
+    needs: hygiene
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: src/GitCiHud
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        shell: pwsh
+        run: dotnet restore --configfile ../../NuGet.Config
+
+      - name: Report vulnerable packages
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          dotnet list package --vulnerable --include-transitive 2>&1 |
+            Tee-Object -FilePath (Join-Path $env:RUNNER_TEMP 'vulnerable-packages.txt')
+          if ($LASTEXITCODE -ne 0) {
+            Write-Warning "dotnet list package returned exit code $LASTEXITCODE; vulnerability output is informational in this workflow."
+          }
+          exit 0
+
+      - name: Build Release
+        shell: pwsh
+        run: dotnet build -c Release --no-restore
+
+  windows-publish:
+    name: Windows publish
+    needs: release-build
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: src/GitCiHud
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        shell: pwsh
+        run: dotnet restore --configfile ../../NuGet.Config -r win-x64
+
+      - name: Publish Windows x64
+        shell: pwsh
+        run: dotnet publish -c Release -r win-x64 --self-contained false --no-restore --output "$env:RUNNER_TEMP\HeadsUp-win-x64"
+
+      - name: Upload HeadsUp Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HeadsUp-win-x64
+          path: ${{ runner.temp }}/HeadsUp-win-x64
+          if-no-files-found: error
