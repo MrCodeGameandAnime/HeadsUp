@@ -15,9 +15,12 @@ public sealed class MainHudViewModel : INotifyPropertyChanged, IDisposable
     private readonly StartupService _startup;
     private readonly CancellationTokenSource _lifetime = new();
     private RepositoryState? _repository;
+    private RepositoryState? _localClone;
     private CiState? _ci;
     private UiPreferences _preferences;
     private int _refreshing;
+    private int _remoteRefreshing;
+    private int _localRefreshing;
     private int _ciRefreshing;
     private readonly object _stateGate = new();
     private long _shaGeneration;
@@ -30,15 +33,17 @@ public sealed class MainHudViewModel : INotifyPropertyChanged, IDisposable
     public string Branch => _repository?.Branch ?? _preferences.Branch ?? "No branch";
     public string RemoteSha => Short(_repository?.RemoteHeadSha);
     public string CiSha => Short(_ci?.HeadSha ?? _repository?.RemoteHeadSha);
-    public string FullLocalSha => _repository?.LocalHeadSha ?? "Unavailable";
+    public string FullLocalSha => _localClone?.LocalHeadSha ?? _repository?.LocalHeadSha ?? "Unavailable";
     public string FullRemoteSha => _repository?.RemoteHeadSha ?? "Unavailable";
     public string FullCiSha => _ci?.HeadSha ?? _repository?.RemoteHeadSha ?? "Waiting for matching run";
     public string LocalStatus => string.IsNullOrWhiteSpace(_preferences.RepositoryPath)
         ? "Not linked"
-        : _repository is { } state && string.Equals(state.Path, _preferences.RepositoryPath, StringComparison.OrdinalIgnoreCase)
-            ? SyncText(state.Sync)
-            : "Linked";
-    public string CommitAge => _repository?.CommitTime is { } d ? FriendlyAge(DateTimeOffset.Now - d) : "";
+        : _localClone is { } local && string.Equals(local.Path, _preferences.RepositoryPath, StringComparison.OrdinalIgnoreCase)
+            ? SyncText(local.Sync)
+            : _repository is { } state && string.Equals(state.Path, _preferences.RepositoryPath, StringComparison.OrdinalIgnoreCase)
+                ? SyncText(state.Sync)
+                : "Linked";
+    public string CommitAge => (_localClone ?? _repository)?.CommitTime is { } d ? FriendlyAge(DateTimeOffset.Now - d) : "";
     public string CiStatusText => _ci is null ? "waiting for run" : CiText(_ci.Status);
     public string Workflow => _ci?.WorkflowName ?? _ci?.Error ?? "Waiting for matching run";
     public string RunNumberText => _ci?.RunNumber is { } number ? number.ToString() : "—";
@@ -83,6 +88,7 @@ public sealed class MainHudViewModel : INotifyPropertyChanged, IDisposable
     {
         if (!string.IsNullOrWhiteSpace(_preferences.GitHubRepository) || !string.IsNullOrWhiteSpace(_preferences.RepositoryPath)) await RefreshAsync(true);
         _ = RunLocalSchedulerAsync(_lifetime.Token);
+        _ = RunRemoteSchedulerAsync(_lifetime.Token);
         _ = RunCiSchedulerAsync(_lifetime.Token);
     }
     public async Task RefreshAsync(bool forceCi = true)
@@ -90,56 +96,95 @@ public sealed class MainHudViewModel : INotifyPropertyChanged, IDisposable
         if (Interlocked.Exchange(ref _refreshing, 1) != 0) return;
         try
         {
-            if (!string.IsNullOrWhiteSpace(_preferences.GitHubRepository))
-            {
-                if (string.IsNullOrWhiteSpace(_preferences.Branch)) return;
-                var selectedRepository = _preferences.GitHubRepository;
-                var selectedBranch = _preferences.Branch;
-                long expectedGeneration;
-                string? previousSha;
-                lock (_stateGate)
-                {
-                    expectedGeneration = _shaGeneration;
-                    previousSha = _repository?.RemoteHeadSha;
-                }
-                var remote = await _github.GetBranchShaAsync(selectedRepository, selectedBranch, _lifetime.Token);
-                bool shaChanged;
-                lock (_stateGate)
-                {
-                    if (expectedGeneration != _shaGeneration || !string.Equals(selectedRepository, _preferences.GitHubRepository, StringComparison.OrdinalIgnoreCase) || !string.Equals(selectedBranch, _preferences.Branch, StringComparison.Ordinal)) return;
-                    _repository = new RepositoryState(selectedRepository.Split('/').Last(), "", selectedBranch, null, remote.Sha, false,
-                        SyncState.Unavailable, null, remote.Error);
-                    shaChanged = !string.Equals(previousSha, remote.Sha, StringComparison.OrdinalIgnoreCase);
-                    if (shaChanged) { _shaGeneration++; _ci = CiState.Waiting(remote.Sha); }
-                }
-                NotifyAll();
-                if (forceCi || shaChanged) await RefreshCiAsync();
-                return;
-            }
-            if (string.IsNullOrWhiteSpace(_preferences.RepositoryPath)) return;
-            var selectedPath = _preferences.RepositoryPath;
-            var localSelectedBranch = _preferences.Branch;
-            long localExpectedGeneration;
-            string? previousLocalSha;
-            lock (_stateGate)
-            {
-                localExpectedGeneration = _shaGeneration;
-                previousLocalSha = _repository?.LocalHeadSha;
-            }
-            var repository = await _git.GetStateAsync(selectedPath, localSelectedBranch, _lifetime.Token);
-            bool localShaChanged;
-            lock (_stateGate)
-            {
-                if (localExpectedGeneration != _shaGeneration || !string.Equals(selectedPath, _preferences.RepositoryPath, StringComparison.OrdinalIgnoreCase) || !string.Equals(localSelectedBranch, _preferences.Branch, StringComparison.Ordinal)) return;
-                _repository = repository;
-                localShaChanged = !string.Equals(previousLocalSha, repository.LocalHeadSha, StringComparison.OrdinalIgnoreCase);
-                if (localShaChanged) { _shaGeneration++; _ci = CiState.Waiting(repository.LocalHeadSha); }
-            }
-            NotifyAll();
-            if (forceCi || localShaChanged) await RefreshCiAsync();
+            await RefreshRemoteAsync(forceCi);
+            await RefreshLocalCloneAsync();
         }
         catch (OperationCanceledException) { }
         finally { Volatile.Write(ref _refreshing, 0); }
+    }
+
+    private async Task RefreshRemoteAsync(bool forceCi)
+    {
+        if (string.IsNullOrWhiteSpace(_preferences.GitHubRepository) || string.IsNullOrWhiteSpace(_preferences.Branch)) return;
+        if (Interlocked.Exchange(ref _remoteRefreshing, 1) != 0) return;
+
+        try
+        {
+            var selectedRepository = _preferences.GitHubRepository;
+            var selectedBranch = _preferences.Branch;
+            long expectedGeneration;
+            string? previousSha;
+            lock (_stateGate)
+            {
+                expectedGeneration = _shaGeneration;
+                previousSha = _repository?.RemoteHeadSha;
+            }
+
+            var remote = await _github.GetBranchShaAsync(selectedRepository, selectedBranch, _lifetime.Token);
+            bool shaChanged;
+            lock (_stateGate)
+            {
+                if (expectedGeneration != _shaGeneration || !string.Equals(selectedRepository, _preferences.GitHubRepository, StringComparison.OrdinalIgnoreCase) || !string.Equals(selectedBranch, _preferences.Branch, StringComparison.Ordinal)) return;
+                _repository = new RepositoryState(selectedRepository.Split('/').Last(), "", selectedBranch, null, remote.Sha, false,
+                    SyncState.Unavailable, null, remote.Error);
+                shaChanged = !string.Equals(previousSha, remote.Sha, StringComparison.OrdinalIgnoreCase);
+                if (shaChanged) { _shaGeneration++; _ci = CiState.Waiting(remote.Sha); }
+            }
+            NotifyAll();
+            if (forceCi || shaChanged) await RefreshCiAsync();
+        }
+        finally
+        {
+            Volatile.Write(ref _remoteRefreshing, 0);
+        }
+    }
+
+    private async Task RefreshLocalCloneAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_preferences.RepositoryPath)) return;
+        if (Interlocked.Exchange(ref _localRefreshing, 1) != 0) return;
+
+        try
+        {
+            var selectedPath = _preferences.RepositoryPath;
+            var selectedBranch = _preferences.Branch;
+            var selectedGitHubRepository = _preferences.GitHubRepository;
+            long expectedGeneration;
+            string? previousLocalSha;
+            lock (_stateGate)
+            {
+                expectedGeneration = _shaGeneration;
+                previousLocalSha = _localClone?.LocalHeadSha ?? _repository?.LocalHeadSha;
+            }
+
+            var local = await _git.GetStateAsync(selectedPath, selectedBranch, _lifetime.Token);
+            var isGitHubPrimary = !string.IsNullOrWhiteSpace(selectedGitHubRepository);
+            bool localShaChanged;
+            lock (_stateGate)
+            {
+                if (!string.Equals(selectedPath, _preferences.RepositoryPath, StringComparison.OrdinalIgnoreCase)
+                    || !string.Equals(selectedBranch, _preferences.Branch, StringComparison.Ordinal)
+                    || !string.Equals(selectedGitHubRepository, _preferences.GitHubRepository, StringComparison.OrdinalIgnoreCase)) return;
+                if (!string.IsNullOrWhiteSpace(selectedGitHubRepository))
+                {
+                    _localClone = local;
+                    localShaChanged = false;
+                }
+                else
+                {
+                    if (expectedGeneration != _shaGeneration) return;
+                    _repository = local;
+                    localShaChanged = !string.Equals(previousLocalSha, local.LocalHeadSha, StringComparison.OrdinalIgnoreCase);
+                    if (localShaChanged) { _shaGeneration++; _ci = CiState.Waiting(local.LocalHeadSha); }
+                }
+            }
+            NotifyAll();
+            if (!isGitHubPrimary && localShaChanged) await RefreshCiAsync();
+        }
+        finally
+        {
+            Volatile.Write(ref _localRefreshing, 0);
+        }
     }
     private async Task RefreshCiAsync()
     {
@@ -150,30 +195,34 @@ public sealed class MainHudViewModel : INotifyPropertyChanged, IDisposable
 
         try
         {
-        string? sha;
-        string? slug;
-        long expectedGeneration;
-        CiState? currentCi;
-        string? localPath;
-        lock (_stateGate)
-        {
-            sha = _repository?.LocalHeadSha ?? _repository?.RemoteHeadSha;
-            currentCi = _ci;
-            expectedGeneration = _shaGeneration;
-            localPath = _repository?.Path;
-            slug = _preferences.GitHubRepository;
-        }
-        if (string.IsNullOrWhiteSpace(sha) || currentCi?.IsTerminal == true && currentCi.HeadSha == sha) return;
-        if (slug is null && !string.IsNullOrWhiteSpace(localPath)) slug = await _git.GetGitHubSlugAsync(localPath, _lifetime.Token);
-        var candidate = slug is null ? CiState.Unavailable("GitHub remote unavailable") : await _github.FindForShaAsync(slug, sha, _lifetime.Token);
-        if (!string.Equals(candidate.HeadSha, sha, StringComparison.OrdinalIgnoreCase) && candidate.Status != CiStatus.Unavailable) candidate = CiState.Waiting(sha);
-        lock (_stateGate)
-        {
-            var currentSha = _repository?.LocalHeadSha ?? _repository?.RemoteHeadSha;
-            if (expectedGeneration != _shaGeneration || !string.Equals(currentSha, sha, StringComparison.OrdinalIgnoreCase)) return;
-            _ci = candidate;
-        }
-        NotifyAll();
+            string? sha;
+            string? slug;
+            long expectedGeneration;
+            CiState? currentCi;
+            string? localPath;
+            lock (_stateGate)
+            {
+                var isGitHubPrimary = !string.IsNullOrWhiteSpace(_preferences.GitHubRepository);
+                sha = isGitHubPrimary ? _repository?.RemoteHeadSha : _repository?.LocalHeadSha;
+                currentCi = _ci;
+                expectedGeneration = _shaGeneration;
+                localPath = isGitHubPrimary ? _preferences.RepositoryPath : _repository?.Path;
+                slug = _preferences.GitHubRepository;
+            }
+
+            if (string.IsNullOrWhiteSpace(sha) || currentCi?.IsTerminal == true && currentCi.HeadSha == sha) return;
+            if (slug is null && !string.IsNullOrWhiteSpace(localPath)) slug = await _git.GetGitHubSlugAsync(localPath, _lifetime.Token);
+            var candidate = slug is null ? CiState.Unavailable("GitHub remote unavailable") : await _github.FindForShaAsync(slug, sha, _lifetime.Token);
+            if (!string.Equals(candidate.HeadSha, sha, StringComparison.OrdinalIgnoreCase) && candidate.Status != CiStatus.Unavailable) candidate = CiState.Waiting(sha);
+            lock (_stateGate)
+            {
+                var currentSha = !string.IsNullOrWhiteSpace(_preferences.GitHubRepository)
+                    ? _repository?.RemoteHeadSha
+                    : _repository?.LocalHeadSha;
+                if (expectedGeneration != _shaGeneration || !string.Equals(currentSha, sha, StringComparison.OrdinalIgnoreCase)) return;
+                _ci = candidate;
+            }
+            NotifyAll();
         }
         finally
         {
@@ -183,8 +232,23 @@ public sealed class MainHudViewModel : INotifyPropertyChanged, IDisposable
     public async Task SetRepositoryAsync(string path)
     {
         if (!await _git.IsRepositoryAsync(path, _lifetime.Token)) return;
-        lock (_stateGate) { _preferences.RepositoryPath = path; if (string.IsNullOrWhiteSpace(_preferences.GitHubRepository)) _preferences.Branch = null; _repository = null; _ci = null; _shaGeneration++; }
-        await SaveAsync(); await RefreshAsync(true);
+        bool isGitHubPrimary;
+        lock (_stateGate)
+        {
+            isGitHubPrimary = !string.IsNullOrWhiteSpace(_preferences.GitHubRepository);
+            _preferences.RepositoryPath = path;
+            if (!isGitHubPrimary)
+            {
+                _preferences.Branch = null;
+                _repository = null;
+                _ci = null;
+                _shaGeneration++;
+            }
+            _localClone = null;
+        }
+        await SaveAsync();
+        if (isGitHubPrimary) await RefreshLocalCloneAsync();
+        else await RefreshAsync(true);
     }
     public async Task SetGitHubRepositoryAsync(string input)
     {
@@ -194,13 +258,19 @@ public sealed class MainHudViewModel : INotifyPropertyChanged, IDisposable
             _preferences.GitHubRepository = repository;
             _preferences.Branch = branch;
             _repository = null;
+            _localClone = null;
             _ci = null;
             _shaGeneration++;
         }
         await SaveAsync();
         await RefreshAsync(true);
     }
-    public async Task SetBranchAsync(string branch) { lock (_stateGate) { _preferences.Branch = branch; _repository = null; _ci = null; _shaGeneration++; } await SaveAsync(); await RefreshAsync(true); }
+    public async Task SetBranchAsync(string branch)
+    {
+        lock (_stateGate) { _preferences.Branch = branch; _repository = null; _localClone = null; _ci = null; _shaGeneration++; }
+        await SaveAsync();
+        await RefreshAsync(true);
+    }
     public Task<IReadOnlyList<string>> GetBranchesAsync() => !string.IsNullOrWhiteSpace(_preferences.GitHubRepository)
         ? _github.GetBranchesAsync(_preferences.GitHubRepository, _lifetime.Token)
         : string.IsNullOrWhiteSpace(_preferences.RepositoryPath) ? Task.FromResult<IReadOnlyList<string>>([]) : _git.GetBranchesAsync(_preferences.RepositoryPath, _lifetime.Token);
@@ -220,10 +290,20 @@ public sealed class MainHudViewModel : INotifyPropertyChanged, IDisposable
     }
     public async Task UnlinkLocalCloneAsync()
     {
-        lock (_stateGate) { _preferences.RepositoryPath = null; _repository = null; _shaGeneration++; }
+        bool isGitHubPrimary;
+        lock (_stateGate)
+        {
+            isGitHubPrimary = !string.IsNullOrWhiteSpace(_preferences.GitHubRepository);
+            _preferences.RepositoryPath = null;
+            _localClone = null;
+            if (!isGitHubPrimary)
+            {
+                _repository = null;
+                _shaGeneration++;
+            }
+        }
         await SaveAsync();
-        if (!string.IsNullOrWhiteSpace(_preferences.GitHubRepository)) await RefreshAsync(true);
-        else NotifyAll();
+        NotifyAll();
     }
     public void OpenRun() { if (CanOpenRun) Process.Start(new ProcessStartInfo(_ci!.Url!) { UseShellExecute = true }); }
     public void OpenFailedJob(CiJob job) { if (!string.IsNullOrWhiteSpace(job.Url)) Process.Start(new ProcessStartInfo(job.Url) { UseShellExecute = true }); }
@@ -232,17 +312,25 @@ public sealed class MainHudViewModel : INotifyPropertyChanged, IDisposable
     {
         while (!ct.IsCancellationRequested)
         {
-            // Local filesystem state is cheap to sample frequently. A GitHub
-            // branch head is remote state, so back it off while terminal CI is
-            // displayed; the CI scheduler handles active-run updates separately.
-            var hasLocalClone = !string.IsNullOrWhiteSpace(_preferences.RepositoryPath);
-            var seconds = hasLocalClone
-                ? 2
-                : _ci?.IsTerminal == true
-                    ? Math.Max(_preferences.PollingSeconds, 60)
-                    : Math.Max(_preferences.PollingSeconds, 15);
+            // This loop is deliberately local-only. It must never call the
+            // GitHub-primary refresh path just because a clone is linked.
+            var seconds = string.IsNullOrWhiteSpace(_preferences.RepositoryPath) ? 15 : 2;
             await Task.Delay(TimeSpan.FromSeconds(seconds), ct);
-            await RefreshAsync(false);
+            await RefreshLocalCloneAsync();
+        }
+    }
+
+    private async Task RunRemoteSchedulerAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            // Remote branch discovery is intentionally slower than local Git
+            // observation. Active CI has its own configurable scheduler.
+            var seconds = _ci?.IsTerminal == true
+                ? Math.Max(_preferences.PollingSeconds, 60)
+                : Math.Max(_preferences.PollingSeconds, 15);
+            await Task.Delay(TimeSpan.FromSeconds(seconds), ct);
+            await RefreshRemoteAsync(false);
         }
     }
     private async Task RunCiSchedulerAsync(CancellationToken ct)
