@@ -1,10 +1,10 @@
-# Git CI HUD
+# HeadsUp
 
 A deliberately small Avalonia desktop overlay for matching a selected local Git branch to the GitHub Actions run for its exact commit SHA.
 
 ## Prerequisites
 
-- .NET 8 SDK or later
+- .NET 10 SDK or later
 - Git on `PATH`
 - GitHub CLI (`gh`) on `PATH`, authenticated with `gh auth login` (optional; local Git information still works without it)
 
