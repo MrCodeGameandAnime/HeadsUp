@@ -14,12 +14,15 @@ not derived from a Git commit SHA.
 
 ## Build an unsigned Store package
 
-Install the Windows 10/11 SDK so `MakeAppx.exe` is available, then run from the
-repository root. The Store payload must be self-contained so it carries the
-.NET runtime and works on a clean compatible Windows installation:
+Install the Windows 10/11 SDK so `MakePri.exe` and `MakeAppx.exe` are
+available, then run these commands from the repository root (the directory
+that contains `src`, `packaging`, and `NuGet.Config`). The Store payload must be
+self-contained so it carries the .NET runtime and works on a clean compatible
+Windows installation. `Build-MSIX.ps1` generates the required
+`resources.pri` index for the qualified logo assets before packing:
 
 ```powershell
-dotnet restore --configfile .\NuGet.Config -r win-x64
+dotnet restore .\src\GitCiHud\GitCiHud.csproj --configfile .\NuGet.Config -r win-x64
 dotnet publish .\src\GitCiHud\GitCiHud.csproj -c Release -r win-x64 --self-contained true --no-restore -p:PublishSingleFile=false --output .\artifacts\HeadsUp-store-win-x64
 .\packaging\Build-MSIX.ps1 -PublishDirectory .\artifacts\HeadsUp-store-win-x64 -OutputDirectory .\artifacts
 ```

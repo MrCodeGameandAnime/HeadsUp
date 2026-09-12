@@ -22,6 +22,18 @@ if ([string]::IsNullOrWhiteSpace($PackageVersion)) {
     $PackageVersion = (Get-Content -LiteralPath (Join-Path $packagingRoot 'package-version.txt') -Raw).Trim()
 }
 
+# PowerShell's provider location and .NET's process working directory can
+# differ (for example, after Set-Location from a shell started in System32).
+# Normalize caller-supplied relative paths against the PowerShell location so
+# output never accidentally targets the Windows directory.
+$shellDirectory = (Get-Location).Path
+if (-not [System.IO.Path]::IsPathRooted($PublishDirectory)) {
+    $PublishDirectory = Join-Path $shellDirectory $PublishDirectory
+}
+if (-not [System.IO.Path]::IsPathRooted($OutputDirectory)) {
+    $OutputDirectory = Join-Path $shellDirectory $OutputDirectory
+}
+
 $versionParts = $PackageVersion.Split('.')
 if ($versionParts.Count -ne 4 -or $PackageVersion -notmatch '^\d{1,5}\.\d{1,5}\.\d{1,5}\.0$') {
     throw "Package version '$PackageVersion' must be Major.Minor.Build.0 with numeric components."
@@ -151,6 +163,28 @@ function Find-WindowsSdkTool([string]$Name) {
     return $candidate.FullName
 }
 
+$makePri = Find-WindowsSdkTool 'makepri.exe'
+$priConfig = Join-Path $stagingDirectory 'priconfig.xml'
+$resourcesPri = Join-Path $stagingDirectory 'resources.pri'
+
+& $makePri createconfig /cf $priConfig /dq en-US /o
+if ($LASTEXITCODE -ne 0) {
+    throw "MakePri createconfig failed with exit code $LASTEXITCODE."
+}
+if (-not (Test-Path -LiteralPath $priConfig -PathType Leaf)) {
+    throw "MakePri did not create the PRI configuration: $priConfig"
+}
+
+& $makePri new /pr $stagingDirectory /cf $priConfig /of $resourcesPri /o
+if ($LASTEXITCODE -ne 0) {
+    throw "MakePri resource indexing failed with exit code $LASTEXITCODE."
+}
+if (-not (Test-Path -LiteralPath $resourcesPri -PathType Leaf)) {
+    throw "MakePri did not create the required resource index: $resourcesPri"
+}
+
+Remove-Item -LiteralPath $priConfig -Force
+
 $makeAppx = Find-WindowsSdkTool 'makeappx.exe'
 & $makeAppx pack /o /h SHA256 /d $stagingDirectory /p $packagePath
 if ($LASTEXITCODE -ne 0) {
@@ -175,6 +209,12 @@ try {
         $packagedIdentity.Version -ne $PackageVersion -or
         $packagedManifest.Package.Properties.PublisherDisplayName -ne '404 Builds') {
         throw 'The generated MSIX does not contain the expected Partner Center identity.'
+    }
+    if (-not (Test-Path -LiteralPath (Join-Path $validationDirectory 'resources.pri') -PathType Leaf)) {
+        throw 'The generated MSIX is missing resources.pri; qualified assets cannot be resolved without the package resource index.'
+    }
+    if (Test-Path -LiteralPath (Join-Path $validationDirectory 'priconfig.xml')) {
+        throw 'The generated MSIX must not contain the temporary priconfig.xml file.'
     }
 }
 finally {
