@@ -14,5 +14,7 @@
     <PackageReference Include="Avalonia" Version="11.2.3" />
     <PackageReference Include="Avalonia.Desktop" Version="11.2.3" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.2.3" />
+    <!-- Avalonia.FreeDesktop brings this in transitively; 0.21.3 is the advisory's fixed backport. -->
+    <PackageReference Include="Tmds.DBus.Protocol" Version="0.21.3" />
   </ItemGroup>
 </Project>

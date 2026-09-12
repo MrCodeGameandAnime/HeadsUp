@@ -36,6 +36,10 @@ truth for the MSIX. `Build-MSIX.ps1` validates the supplied Windows asset
 matrix and copies it into the package unchanged; it does not generate or
 replace package artwork from `headsup-logo.png`.
 
+The target-size and unplated taskbar variants use the `Square44x44Logo` stem
+because that is the asset name referenced by `uap:VisualElements` in the
+manifest (for example, `Square44x44Logo.targetsize-24_altform-unplated.png`).
+
 For local sideload testing, pass a development `.pfx` to the packaging script:
 
 ```powershell

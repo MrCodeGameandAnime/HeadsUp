@@ -68,9 +68,9 @@ $requiredAssetFamilies = @(
     @{ Label = 'Square44x44Logo scale assets'; Pattern = '^Square44x44Logo(?:\.scale-\d+)?\.png$' },
     @{ Label = 'Square150x150Logo scale assets'; Pattern = '^Square150x150Logo(?:\.scale-\d+)?\.png$' },
     @{ Label = 'StoreLogo scale assets'; Pattern = '^StoreLogo(?:\.scale-\d+)?\.png$' },
-    @{ Label = 'AppList target-size default assets'; Pattern = '^AppList\.targetsize-\d+\.png$' },
-    @{ Label = 'AppList target-size unplated assets'; Pattern = '^AppList\.targetsize-\d+_altform-unplated\.png$' },
-    @{ Label = 'AppList target-size light-unplated assets'; Pattern = '^AppList\.targetsize-\d+_altform-lightunplated\.png$' },
+    @{ Label = 'Square44x44Logo target-size default assets'; Pattern = '^Square44x44Logo\.targetsize-\d+\.png$' },
+    @{ Label = 'Square44x44Logo target-size unplated assets'; Pattern = '^Square44x44Logo\.targetsize-\d+_altform-unplated\.png$' },
+    @{ Label = 'Square44x44Logo target-size light-unplated assets'; Pattern = '^Square44x44Logo\.targetsize-\d+_altform-lightunplated\.png$' },
     @{ Label = 'Medium tile assets'; Pattern = '^MedTile(?:\.scale-\d+)?\.png$' }
 )
 foreach ($requiredAssetFamily in $requiredAssetFamilies) {
