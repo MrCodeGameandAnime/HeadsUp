@@ -6,29 +6,35 @@ The package manifest uses the Partner Center identity reserved for HeadsUp:
 - Publisher: `CN=2BB531F8-77DD-4D82-AA5F-230F26EB09EE`
 - Publisher display name: `404 Builds`
 
-`package-version.txt` is the single initial package version (`0.1.0.0`). Every
-Store submission must increase all or part of this four-part version; it is not
-derived from a Git commit SHA.
+`package-version.txt` is the single initial package version (`1.0.0.0`). MSIX
+Store versions use `Major.Minor.Build.Revision`: Major must be 1–65535, Minor
+and Build must be 0–65535, and Revision must remain exactly `0`. Future Store
+submissions should increment one of the first three components; the version is
+not derived from a Git commit SHA.
 
 ## Build an unsigned Store package
 
 Install the Windows 10/11 SDK so `MakeAppx.exe` is available, then run from the
-repository root:
+repository root. The Store payload must be self-contained so it carries the
+.NET runtime and works on a clean compatible Windows installation:
 
 ```powershell
 dotnet restore --configfile .\NuGet.Config -r win-x64
-dotnet publish .\src\GitCiHud\GitCiHud.csproj -c Release -r win-x64 --self-contained false --no-restore --output .\artifacts\HeadsUp-win-x64
-packaging\Build-MSIX.ps1 -PublishDirectory .\artifacts\HeadsUp-win-x64 -OutputDirectory .\artifacts
+dotnet publish .\src\GitCiHud\GitCiHud.csproj -c Release -r win-x64 --self-contained true --no-restore -p:PublishSingleFile=false --output .\artifacts\HeadsUp-store-win-x64
+.\packaging\Build-MSIX.ps1 -PublishDirectory .\artifacts\HeadsUp-store-win-x64 -OutputDirectory .\artifacts
 ```
 
-The result is `artifacts\HeadsUp-0.1.0.0.msix`. It is intentionally unsigned:
+The result is `artifacts\HeadsUp-1.0.0.0.msix`. It is intentionally unsigned:
 Microsoft signs MSIX packages during Store certification, so no production
 certificate or private key belongs in this repository.
+
+The separate `HeadsUp-win-x64` CI artifact remains framework-dependent for
+lightweight development/testing. It is not the Store submission payload.
 
 For local sideload testing, pass a development `.pfx` to the packaging script:
 
 ```powershell
-.\packaging\Build-MSIX.ps1 -PublishDirectory .\artifacts\HeadsUp-win-x64 `
+.\packaging\Build-MSIX.ps1 -PublishDirectory .\artifacts\HeadsUp-store-win-x64 `
   -OutputDirectory .\artifacts -CertificatePath .\local-headsup-test.pfx
 ```
 
@@ -40,7 +46,7 @@ from an active Windows user session (the kit is installed with the Windows SDK):
 
 ```powershell
 appcert.exe reset
-appcert.exe test -appxpackagepath .\artifacts\HeadsUp-0.1.0.0.msix `
+appcert.exe test -appxpackagepath .\artifacts\HeadsUp-1.0.0.0.msix `
   -reportoutputpath .\artifacts\appcert
 ```
 
@@ -51,3 +57,7 @@ environment.
 The packaged build does not expose the unpackaged registry-based “Start with
 Windows” setting. A future packaged startup implementation can add a manifest
 startup task and wire it to the Windows startup-task API.
+
+HeadsUp uses the authenticated GitHub CLI for repository and Actions data. New
+users should install GitHub CLI (`gh`) and run `gh auth login`; the app reports
+those setup steps when the CLI or authentication is missing.

@@ -118,11 +118,30 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Download Windows publish payload
-        uses: actions/download-artifact@v4
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
         with:
-          name: HeadsUp-win-x64
-          path: ${{ runner.temp }}/HeadsUp-win-x64
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore Store payload
+        shell: pwsh
+        working-directory: src/GitCiHud
+        run: dotnet restore --configfile ../../NuGet.Config -r win-x64
+
+      - name: Publish self-contained Store payload
+        shell: pwsh
+        working-directory: src/GitCiHud
+        run: dotnet publish -c Release -r win-x64 --self-contained true --no-restore -p:PublishSingleFile=false --output "$env:RUNNER_TEMP\HeadsUp-store-win-x64"
+
+      - name: Verify bundled .NET runtime
+        shell: pwsh
+        run: |
+          $payload = "$env:RUNNER_TEMP\HeadsUp-store-win-x64"
+          foreach ($required in @('HeadsUp.exe', 'coreclr.dll', 'hostfxr.dll', 'hostpolicy.dll', 'System.Private.CoreLib.dll')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $payload $required) -PathType Leaf)) {
+              throw "Self-contained payload is missing $required."
+            }
+          }
 
       - name: Validate Partner Center identity
         shell: pwsh
@@ -141,7 +160,7 @@ jobs:
         shell: pwsh
         run: |
           .\packaging\Build-MSIX.ps1 `
-            -PublishDirectory "$env:RUNNER_TEMP\HeadsUp-win-x64" `
+            -PublishDirectory "$env:RUNNER_TEMP\HeadsUp-store-win-x64" `
             -OutputDirectory "$env:RUNNER_TEMP\HeadsUp-msix"
 
       - name: Upload HeadsUp MSIX artifact

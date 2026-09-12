@@ -53,7 +53,9 @@ public sealed class MainHudViewModel : INotifyPropertyChanged, IDisposable
     public string StartedText => _ci?.StartedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "—";
     public string CompletedText => _ci?.CompletedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "—";
     public string ConclusionText => _ci?.Status switch { CiStatus.Success => "success", CiStatus.Failure => "failure", CiStatus.Cancelled => "cancelled", CiStatus.Skipped => "skipped", _ => "—" };
-    public string RunIdentity => _ci?.WorkflowName is { } name && _ci.RunNumber is { } number ? $"{name} #{number}" : "Waiting for matching run";
+    public string RunIdentity => _ci?.Status == CiStatus.Unavailable
+        ? _ci.Error ?? "GitHub setup required"
+        : _ci?.WorkflowName is { } name && _ci.RunNumber is { } number ? $"{name} #{number}" : "Waiting for matching run";
     public string DetailCi => $"{CiStatusText} {Runtime}".Trim();
     public IReadOnlyList<CiJob> Jobs => _ci?.Jobs ?? [];
     public IReadOnlyList<CiJob> FailedJobs => Jobs.Where(j => j.Status == CiStatus.Failure).ToArray();
@@ -129,7 +131,16 @@ public sealed class MainHudViewModel : INotifyPropertyChanged, IDisposable
                 _repository = new RepositoryState(selectedRepository.Split('/').Last(), "", selectedBranch, null, remote.Sha, false,
                     SyncState.Unavailable, null, remote.Error);
                 shaChanged = !string.Equals(previousSha, remote.Sha, StringComparison.OrdinalIgnoreCase);
-                if (shaChanged) { _shaGeneration++; _ci = CiState.Waiting(remote.Sha); }
+                if (remote.Sha is null)
+                {
+                    _shaGeneration++;
+                    _ci = CiState.Unavailable(remote.Error ?? "GitHub branch unavailable.");
+                }
+                else if (shaChanged)
+                {
+                    _shaGeneration++;
+                    _ci = CiState.Waiting(remote.Sha);
+                }
             }
             NotifyAll();
             if (forceCi || shaChanged) await RefreshCiAsync();

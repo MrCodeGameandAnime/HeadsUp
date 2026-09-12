@@ -7,7 +7,7 @@
   <Identity
     Name="404Builds.HeadsUpCI"
     Publisher="CN=2BB531F8-77DD-4D82-AA5F-230F26EB09EE"
-    Version="0.1.0.0"
+    Version="1.0.0.0"
     ProcessorArchitecture="x64" />
   <Properties>
     <DisplayName>HeadsUp</DisplayName>

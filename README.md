@@ -6,7 +6,7 @@ A deliberately small Avalonia desktop overlay for matching a selected local Git 
 
 - .NET 10 SDK or later
 - Git on `PATH`
-- GitHub CLI (`gh`) on `PATH`, authenticated with `gh auth login` (optional; local Git information still works without it)
+- GitHub CLI (`gh`) on `PATH`, authenticated with `gh auth login` for GitHub repository monitoring (optional only for local-clone-only use)
 
 ## Run
 
@@ -26,13 +26,14 @@ candidate is built as an MSIX with the Windows SDK's `MakeAppx.exe`:
 
 ```powershell
 dotnet restore --configfile .\NuGet.Config -r win-x64
-dotnet publish .\src\GitCiHud\GitCiHud.csproj -c Release -r win-x64 --self-contained false --no-restore --output .\artifacts\HeadsUp-win-x64
-.\packaging\Build-MSIX.ps1 -PublishDirectory .\artifacts\HeadsUp-win-x64 -OutputDirectory .\artifacts
+dotnet publish .\src\GitCiHud\GitCiHud.csproj -c Release -r win-x64 --self-contained true --no-restore -p:PublishSingleFile=false --output .\artifacts\HeadsUp-store-win-x64
+.\packaging\Build-MSIX.ps1 -PublishDirectory .\artifacts\HeadsUp-store-win-x64 -OutputDirectory .\artifacts
 ```
 
 See [packaging/README.md](packaging/README.md) for package identity, versioning,
-and local signing guidance. CI uploads both `HeadsUp-win-x64` and
-`HeadsUp-msix` separately.
+local signing guidance, and the distinction between the self-contained Store
+payload and the framework-dependent `HeadsUp-win-x64` development artifact. CI
+uploads both artifacts separately.
 
 ## Exact-SHA rule
 

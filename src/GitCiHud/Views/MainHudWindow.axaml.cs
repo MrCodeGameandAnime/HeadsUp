@@ -68,8 +68,13 @@ public partial class MainHudWindow : Window
             HorizontalAlignment = HorizontalAlignment.Stretch
         };
         var branch = new ComboBox { MinWidth = 220, HorizontalAlignment = HorizontalAlignment.Stretch };
+        var branchStatus = new TextBlock { Opacity = .7, TextWrapping = TextWrapping.Wrap };
         var loadBranches = new Button { Content = "Load branches", MinWidth = 105 };
-        repository.TextChanged += (_, _) => branch.SelectedItem = null;
+        repository.TextChanged += (_, _) =>
+        {
+            branch.SelectedItem = null;
+            branchStatus.Text = "";
+        };
         var localClone = new TextBox
         {
             Text = preferences.RepositoryPath ?? "",
@@ -81,6 +86,7 @@ public partial class MainHudWindow : Window
 
         async Task LoadBranchesAsync()
         {
+            branchStatus.Text = "Loading branches…";
             try
             {
                 var branches = !string.IsNullOrWhiteSpace(repository.Text)
@@ -88,10 +94,14 @@ public partial class MainHudWindow : Window
                     : await Vm.GetBranchesAsync();
                 branch.ItemsSource = branches;
                 branch.SelectedItem = branches.FirstOrDefault(value => string.Equals(value, preferences.Branch, StringComparison.OrdinalIgnoreCase));
+                branchStatus.Text = branches.Count == 0
+                    ? "No branches found. Check that GitHub CLI is installed and authenticated (gh auth login)."
+                    : "";
             }
             catch
             {
                 branch.ItemsSource = Array.Empty<string>();
+                branchStatus.Text = "Unable to load branches. Install GitHub CLI and run gh auth login.";
             }
         }
 
@@ -139,6 +149,7 @@ public partial class MainHudWindow : Window
         panel.Children.Add(SettingRow(repository, loadBranches));
         panel.Children.Add(new TextBlock { Text = "Branch", FontWeight = FontWeight.SemiBold });
         panel.Children.Add(branch);
+        panel.Children.Add(branchStatus);
         panel.Children.Add(new TextBlock { Text = "Local clone (optional)", FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 4, 0, 0) });
         panel.Children.Add(SettingRow(localClone, new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Children = { browse, unlink } }));
         panel.Children.Add(new TextBlock { Text = "Appearance", FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 4, 0, 0) });

@@ -12,6 +12,10 @@ public interface IGitHubActionsService
 
 public sealed class GitHubActionsService : IGitHubActionsService
 {
+    private const string CliSetupMessage = "GitHub CLI not installed. Install gh and run gh auth login.";
+    private const string AuthenticationMessage = "GitHub authentication required. Run gh auth login.";
+    private const string AvailabilityMessage = "GitHub unavailable. Check network or run gh auth status.";
+
     public async Task<IReadOnlyList<string>> GetBranchesAsync(string repository, CancellationToken ct)
     {
         var result = await ProcessRunner.RunAsync("gh", $"api repos/{repository}/branches --paginate --jq \".[].name\"", null, ct);
@@ -80,5 +84,19 @@ public sealed class GitHubActionsService : IGitHubActionsService
     private static int? GetInt(JsonElement e, string name) => e.TryGetProperty(name, out var v) && v.TryGetInt32(out var x) ? x : null;
     private static long? GetLong(JsonElement e, string name) => e.TryGetProperty(name, out var v) && v.TryGetInt64(out var x) ? x : null;
     private static DateTimeOffset? GetDate(JsonElement e, string name) => DateTimeOffset.TryParse(GetString(e, name), out var date) ? date : null;
-    private static string CleanError(string input) => input.Contains("not logged", StringComparison.OrdinalIgnoreCase) ? "GitHub authentication required" : "GitHub unavailable";
+    private static string CleanError(string input)
+    {
+        if (input.Contains("gh unavailable", StringComparison.OrdinalIgnoreCase)
+            || input.Contains("not recognized", StringComparison.OrdinalIgnoreCase)
+            || input.Contains("cannot find", StringComparison.OrdinalIgnoreCase)
+            || input.Contains("no such file", StringComparison.OrdinalIgnoreCase))
+            return CliSetupMessage;
+
+        if (input.Contains("not logged", StringComparison.OrdinalIgnoreCase)
+            || input.Contains("auth login", StringComparison.OrdinalIgnoreCase)
+            || input.Contains("authentication", StringComparison.OrdinalIgnoreCase))
+            return AuthenticationMessage;
+
+        return AvailabilityMessage;
+    }
 }

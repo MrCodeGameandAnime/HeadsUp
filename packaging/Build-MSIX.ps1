@@ -23,9 +23,14 @@ if ([string]::IsNullOrWhiteSpace($PackageVersion)) {
 }
 
 $versionParts = $PackageVersion.Split('.')
-if ($versionParts.Count -ne 4 -or $PackageVersion -notmatch '^\d+(\.\d+){3}$' -or
-    @($versionParts | ForEach-Object { [int]$_ } | Where-Object { $_ -gt 65535 }).Count -gt 0) {
-    throw "Package version '$PackageVersion' must be a four-part MSIX version between 0.0.0.0 and 65535.65535.65535.65535."
+if ($versionParts.Count -ne 4 -or $PackageVersion -notmatch '^\d{1,5}\.\d{1,5}\.\d{1,5}\.0$') {
+    throw "Package version '$PackageVersion' must be Major.Minor.Build.0 with numeric components."
+}
+$numericVersionParts = @($versionParts | ForEach-Object { [int]$_ })
+if ($numericVersionParts[0] -lt 1 -or $numericVersionParts[0] -gt 65535 -or
+    $numericVersionParts[1] -gt 65535 -or $numericVersionParts[2] -gt 65535 -or
+    $numericVersionParts[3] -ne 0) {
+    throw "Package version '$PackageVersion' must have Major 1-65535, Minor/Build 0-65535, and Revision exactly 0."
 }
 
 if (-not (Test-Path -LiteralPath $PublishDirectory -PathType Container)) {
@@ -33,6 +38,12 @@ if (-not (Test-Path -LiteralPath $PublishDirectory -PathType Container)) {
 }
 if (-not (Test-Path -LiteralPath (Join-Path $PublishDirectory 'HeadsUp.exe') -PathType Leaf)) {
     throw "The publish directory does not contain HeadsUp.exe: $PublishDirectory"
+}
+$runtimeFiles = @('coreclr.dll', 'hostfxr.dll', 'hostpolicy.dll', 'System.Private.CoreLib.dll')
+foreach ($runtimeFile in $runtimeFiles) {
+    if (-not (Test-Path -LiteralPath (Join-Path $PublishDirectory $runtimeFile) -PathType Leaf)) {
+        throw "The Store MSIX payload must be self-contained; '$runtimeFile' is missing from $PublishDirectory."
+    }
 }
 
 $manifestTemplatePath = Join-Path $packagingRoot 'AppxManifest.xml'
