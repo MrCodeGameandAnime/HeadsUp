@@ -31,6 +31,11 @@ certificate or private key belongs in this repository.
 The separate `HeadsUp-win-x64` CI artifact remains framework-dependent for
 lightweight development/testing. It is not the Store submission payload.
 
+Package artwork is checked in under `packaging/Assets/` and is the source of
+truth for the MSIX. `Build-MSIX.ps1` validates the supplied Windows asset
+matrix and copies it into the package unchanged; it does not generate or
+replace package artwork from `headsup-logo.png`.
+
 For local sideload testing, pass a development `.pfx` to the packaging script:
 
 ```powershell

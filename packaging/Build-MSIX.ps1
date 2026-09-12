@@ -46,6 +46,40 @@ foreach ($runtimeFile in $runtimeFiles) {
     }
 }
 
+$packageAssetsDirectory = Join-Path $packagingRoot 'Assets'
+if (-not (Test-Path -LiteralPath $packageAssetsDirectory -PathType Container)) {
+    throw "The supplied package asset directory was not found: $packageAssetsDirectory"
+}
+
+$packageAssetFiles = @(Get-ChildItem -LiteralPath $packageAssetsDirectory -File -Filter '*.png')
+$packageAssetNames = @($packageAssetFiles.Name)
+$requiredAssetFiles = @(
+    'Square44x44Logo.png',
+    'Square150x150Logo.png',
+    'StoreLogo.png'
+)
+foreach ($requiredAssetFile in $requiredAssetFiles) {
+    if ($requiredAssetFile -notin $packageAssetNames) {
+        throw "Required supplied package asset is missing: $packageAssetsDirectory\$requiredAssetFile"
+    }
+}
+
+$requiredAssetFamilies = @(
+    @{ Label = 'Square44x44Logo scale assets'; Pattern = '^Square44x44Logo(?:\.scale-\d+)?\.png$' },
+    @{ Label = 'Square150x150Logo scale assets'; Pattern = '^Square150x150Logo(?:\.scale-\d+)?\.png$' },
+    @{ Label = 'StoreLogo scale assets'; Pattern = '^StoreLogo(?:\.scale-\d+)?\.png$' },
+    @{ Label = 'AppList target-size default assets'; Pattern = '^AppList\.targetsize-\d+\.png$' },
+    @{ Label = 'AppList target-size unplated assets'; Pattern = '^AppList\.targetsize-\d+_altform-unplated\.png$' },
+    @{ Label = 'AppList target-size light-unplated assets'; Pattern = '^AppList\.targetsize-\d+_altform-lightunplated\.png$' },
+    @{ Label = 'Medium tile assets'; Pattern = '^MedTile(?:\.scale-\d+)?\.png$' }
+)
+foreach ($requiredAssetFamily in $requiredAssetFamilies) {
+    $matchingAssets = @($packageAssetNames | Where-Object { $_ -match $requiredAssetFamily.Pattern })
+    if ($matchingAssets.Count -eq 0) {
+        throw "Required supplied package asset family is missing ($($requiredAssetFamily.Label)): $packageAssetsDirectory\$($requiredAssetFamily.Pattern)"
+    }
+}
+
 $manifestTemplatePath = Join-Path $packagingRoot 'AppxManifest.xml'
 $manifestTemplate = Get-Content -LiteralPath $manifestTemplatePath -Raw
 [xml]$manifestXml = $manifestTemplate
@@ -77,6 +111,11 @@ Get-ChildItem -LiteralPath $PublishDirectory -Force | ForEach-Object {
     Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $stagingDirectory $_.Name) -Recurse -Force
 }
 
+foreach ($packageAssetFile in $packageAssetFiles) {
+    Copy-Item -LiteralPath $packageAssetFile.FullName `
+        -Destination (Join-Path $stagingDirectory 'Assets' $packageAssetFile.Name) -Force
+}
+
 $writerSettings = [System.Xml.XmlWriterSettings]::new()
 $writerSettings.Encoding = [System.Text.UTF8Encoding]::new($false)
 $writerSettings.Indent = $true
@@ -86,44 +125,6 @@ try {
 }
 finally {
     $writer.Dispose()
-}
-
-$logoSource = Join-Path $repositoryRoot 'src\GitCiHud\Assets\headsup-logo.png'
-if (-not (Test-Path -LiteralPath $logoSource -PathType Leaf)) {
-    throw "Canonical HeadsUp logo was not found: $logoSource"
-}
-
-Add-Type -AssemblyName System.Drawing
-$logoImage = [System.Drawing.Image]::FromFile($logoSource)
-try {
-    $logoTargets = @(
-        @{ Name = 'Square44x44Logo.png'; Size = 44 },
-        @{ Name = 'Square44x44Logo.scale-200.png'; Size = 88 },
-        @{ Name = 'Square44x44Logo.scale-400.png'; Size = 176 },
-        @{ Name = 'Square150x150Logo.png'; Size = 150 },
-        @{ Name = 'Square150x150Logo.scale-200.png'; Size = 300 },
-        @{ Name = 'Square150x150Logo.scale-400.png'; Size = 600 },
-        @{ Name = 'StoreLogo.png'; Size = 50 }
-    )
-    foreach ($target in $logoTargets) {
-        $bitmap = [System.Drawing.Bitmap]::new($target.Size, $target.Size, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
-        $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-        try {
-            $graphics.CompositingMode = [System.Drawing.Drawing2D.CompositingMode]::SourceCopy
-            $graphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-            $graphics.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
-            $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
-            $graphics.DrawImage($logoImage, 0, 0, $target.Size, $target.Size)
-            $bitmap.Save((Join-Path $stagingDirectory 'Assets' $target.Name), [System.Drawing.Imaging.ImageFormat]::Png)
-        }
-        finally {
-            $graphics.Dispose()
-            $bitmap.Dispose()
-        }
-    }
-}
-finally {
-    $logoImage.Dispose()
 }
 
 function Find-WindowsSdkTool([string]$Name) {
