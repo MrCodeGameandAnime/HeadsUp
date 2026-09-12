@@ -27,7 +27,7 @@ jobs:
         run: |
           $tracked = @(git ls-files | Where-Object {
             $_ -match '(^|/)(bin|obj|\.nuget|\.vs)/' -or
-            $_ -match '\.(dll|exe|pdb|nupkg|snupkg)$'
+            $_ -match '\.(dll|exe|pdb|nupkg|snupkg|msix|appx|msixbundle|appxbundle)$'
           })
           if ($tracked.Count -gt 0) {
             Write-Host 'Tracked generated artifacts were found:'
@@ -108,4 +108,45 @@ jobs:
         with:
           name: HeadsUp-win-x64
           path: ${{ runner.temp }}/HeadsUp-win-x64
+          if-no-files-found: error
+
+  msix-package:
+    name: MSIX package
+    needs: windows-publish
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Download Windows publish payload
+        uses: actions/download-artifact@v4
+        with:
+          name: HeadsUp-win-x64
+          path: ${{ runner.temp }}/HeadsUp-win-x64
+
+      - name: Validate Partner Center identity
+        shell: pwsh
+        run: |
+          [xml]$manifest = Get-Content -LiteralPath .\packaging\AppxManifest.xml -Raw
+          $identity = $manifest.Package.Identity
+          $version = (Get-Content -LiteralPath .\packaging\package-version.txt -Raw).Trim()
+          if ($identity.Name -ne '404Builds.HeadsUpCI' -or
+              $identity.Publisher -ne 'CN=2BB531F8-77DD-4D82-AA5F-230F26EB09EE' -or
+              $manifest.Package.Properties.PublisherDisplayName -ne '404 Builds' -or
+              $identity.Version -ne $version) {
+            throw 'The MSIX manifest identity or package version does not match the checked-in packaging metadata.'
+          }
+
+      - name: Build MSIX
+        shell: pwsh
+        run: |
+          .\packaging\Build-MSIX.ps1 `
+            -PublishDirectory "$env:RUNNER_TEMP\HeadsUp-win-x64" `
+            -OutputDirectory "$env:RUNNER_TEMP\HeadsUp-msix"
+
+      - name: Upload HeadsUp MSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HeadsUp-msix
+          path: ${{ runner.temp }}/HeadsUp-msix/*.msix
           if-no-files-found: error

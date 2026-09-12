@@ -82,6 +82,7 @@ public sealed class MainHudViewModel : INotifyPropertyChanged, IDisposable
     }
     public double SurfaceOpacity => _preferences.Opacity;
     public UiPreferences Preferences => _preferences;
+    public bool IsPackaged => _startup.IsPackaged;
     public string EvidenceText => $"Repository: {RepositoryName}\nBranch: {Branch}\nSHA: {FullCiSha}\nWorkflow: {Workflow}\nRun Number: {RunNumberText}\nRun ID: {RunIdText}\nConclusion: {ConclusionText}\nRun: {RunUrl}";
 
     public async Task InitializeAsync()

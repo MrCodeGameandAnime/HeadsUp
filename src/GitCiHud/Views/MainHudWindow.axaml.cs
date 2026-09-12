@@ -124,7 +124,8 @@ public partial class MainHudWindow : Window
         transparency.Items.Add(new ComboBoxItem { Content = "Opaque", Tag = 1.0 });
         transparency.SelectedIndex = preferences.Opacity switch { <= .4 => 0, <= .66 => 1, < .9 => 2, _ => 3 };
         var polling = new TextBox { Text = preferences.PollingSeconds.ToString(), Width = 70 };
-        var startWithWindows = new CheckBox { Content = "Start with Windows", IsChecked = preferences.StartWithWindows };
+        var isPackaged = Vm.IsPackaged;
+        var startWithWindows = new CheckBox { Content = "Start with Windows", IsChecked = !isPackaged && preferences.StartWithWindows };
         var alwaysOnTop = new CheckBox { Content = "Always on top", IsChecked = preferences.AlwaysOnTop };
 
         var save = new Button { Content = "Save", IsDefault = true, MinWidth = 82 };
@@ -144,7 +145,15 @@ public partial class MainHudWindow : Window
         panel.Children.Add(SettingRow(new TextBlock { Text = "Accent color", VerticalAlignment = VerticalAlignment.Center }, accent));
         panel.Children.Add(SettingRow(new TextBlock { Text = "Surface opacity", VerticalAlignment = VerticalAlignment.Center }, transparency));
         panel.Children.Add(SettingRow(new TextBlock { Text = "Polling interval (seconds)", VerticalAlignment = VerticalAlignment.Center }, polling));
-        panel.Children.Add(startWithWindows);
+        if (isPackaged)
+            panel.Children.Add(new TextBlock
+            {
+                Text = "Start with Windows is unavailable in the Store build.",
+                Opacity = .7,
+                TextWrapping = TextWrapping.Wrap
+            });
+        else
+            panel.Children.Add(startWithWindows);
         panel.Children.Add(alwaysOnTop);
         panel.Children.Add(buttons);
 
@@ -185,7 +194,10 @@ public partial class MainHudWindow : Window
         if (!int.TryParse(polling.Text, out var pollingSeconds)) pollingSeconds = preferences.PollingSeconds;
         preferences.PollingSeconds = Math.Clamp(pollingSeconds, 5, 60);
         preferences.AlwaysOnTop = alwaysOnTop.IsChecked == true;
-        await Vm.SetStartWithWindowsAsync(startWithWindows.IsChecked == true);
+        if (isPackaged)
+            preferences.StartWithWindows = false;
+        else
+            await Vm.SetStartWithWindowsAsync(startWithWindows.IsChecked == true);
         await Vm.SavePreferencesAsync();
         Topmost = preferences.AlwaysOnTop;
     }
