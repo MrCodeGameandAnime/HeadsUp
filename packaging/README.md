@@ -24,7 +24,7 @@ Windows installation. `Build-MSIX.ps1` generates the required
 ```powershell
 dotnet restore .\src\GitCiHud\GitCiHud.csproj --configfile .\NuGet.Config -r win-x64
 dotnet publish .\src\GitCiHud\GitCiHud.csproj -c Release -r win-x64 --self-contained true --no-restore -p:PublishSingleFile=false --output .\artifacts\HeadsUp-store-win-x64
-.\packaging\Build-MSIX.ps1 -PublishDirectory .\artifacts\HeadsUp-store-win-x64 -OutputDirectory .\artifacts
+.\packaging\Build-MSIX.ps1 -PublishDirectory ".\artifacts\HeadsUp-store-win-x64" -OutputDirectory ".\artifacts"
 ```
 
 The result is `artifacts\HeadsUp-1.0.0.0.msix`. It is intentionally unsigned:

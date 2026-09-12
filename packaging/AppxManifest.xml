@@ -10,7 +10,7 @@
     Version="1.0.0.0"
     ProcessorArchitecture="x64" />
   <Properties>
-    <DisplayName>HeadsUp</DisplayName>
+    <DisplayName>HeadsUp CI</DisplayName>
     <PublisherDisplayName>404 Builds</PublisherDisplayName>
     <Description>HeadsUp GitHub Actions CI monitor</Description>
     <Logo>Assets\StoreLogo.png</Logo>
@@ -33,7 +33,7 @@
       Executable="HeadsUp.exe"
       EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements
-        DisplayName="HeadsUp"
+        DisplayName="HeadsUp CI"
         Description="HeadsUp GitHub Actions CI monitor"
         BackgroundColor="#2D6A8E"
         Square150x150Logo="Assets\Square150x150Logo.png"

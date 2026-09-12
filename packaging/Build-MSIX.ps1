@@ -124,8 +124,9 @@ Get-ChildItem -LiteralPath $PublishDirectory -Force | ForEach-Object {
 }
 
 foreach ($packageAssetFile in $packageAssetFiles) {
+    $assetDestination = Join-Path (Join-Path $stagingDirectory 'Assets') $packageAssetFile.Name
     Copy-Item -LiteralPath $packageAssetFile.FullName `
-        -Destination (Join-Path $stagingDirectory 'Assets' $packageAssetFile.Name) -Force
+        -Destination $assetDestination -Force
 }
 
 $writerSettings = [System.Xml.XmlWriterSettings]::new()
