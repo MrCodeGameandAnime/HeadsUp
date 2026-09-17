@@ -1,10 +1,26 @@
 # HeadsUp CI
 
-HeadsUp is a small Windows desktop overlay for monitoring GitHub Actions for
+HeadsUp CI is a compact Windows desktop app for monitoring GitHub Actions for
 the exact commit currently selected in a repository or local clone.
 
 It keeps local Git state, the selected GitHub branch, and the matching CI run
 separate so the HUD never reports a successful run for the wrong commit.
+
+## Install
+
+### Microsoft Store (recommended)
+
+Install the signed Store version of HeadsUp CI. It includes the .NET runtime
+and is the normal install path for most users.
+
+Store ID: `9NMLS5FT4ZRW`
+
+### Portable Windows x64
+
+Download the [portable Windows x64 ZIP](https://github.com/MrCodeGameandAnime/HeadsUp/releases/download/v1.0.0.0/HeadsUp-CI-v1.0.0.0-win-x64.zip), extract it, and run `HeadsUp.exe`.
+
+The portable build is framework-dependent and requires the **.NET 10 Desktop
+Runtime**. It is intended for direct GitHub use and testing.
 
 ## What it does
 
@@ -25,11 +41,12 @@ mutates a repository.
 
 ## Requirements
 
-- Windows 10 or Windows 11 for the packaged build.
-- .NET 10 SDK or later for development.
-- Git on `PATH` when linking a local clone.
+- Windows 10 version 2004 or later.
 - GitHub CLI (`gh`) on `PATH`, authenticated with `gh auth login`, for GitHub
   repository and Actions monitoring.
+- **Portable ZIP only:** .NET 10 Desktop Runtime.
+- **Development only:** .NET 10 SDK or later.
+- Git on `PATH` when linking a local clone.
 
 GitHub monitoring is optional when using HeadsUp only to inspect a local clone.
 When a local clone is used without a repository entered in Settings, HeadsUp
