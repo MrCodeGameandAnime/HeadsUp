@@ -10,10 +10,11 @@ separate so the HUD never reports a successful run for the wrong commit.
 
 ### Microsoft Store (recommended)
 
-Install the signed Store version of HeadsUp CI. It includes the .NET runtime
-and is the normal install path for most users.
+[Microsoft Store download](https://apps.microsoft.com/detail/9nmls5ft4zrw?ocid=webpdpshare)
 
-Store ID: `9NMLS5FT4ZRW`
+Get HeadsUp CI from the Microsoft Store. This is the official download method;
+the signed Store version includes the .NET runtime and is the normal install
+path for most users.
 
 ### Portable Windows x64
 
